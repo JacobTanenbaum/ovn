@@ -8756,8 +8756,9 @@ build_lswitch_lflows_l2_unknown(struct ovn_datapath *od,
                       "outport = \""MC_UNKNOWN "\"; output;",
                       lflow_ref);
     } else {
-        ovn_lflow_add(lflows, od, S_SWITCH_IN_L2_UNKNOWN, 50,
-                      "outport == \"none\"",  debug_drop_action(),
+        ovn_lflow_add_with_desc(lflows, od, S_SWITCH_IN_L2_UNKNOWN, 50,
+                      "outport == \"none\"",
+                      "No L2 destination",
                       lflow_ref);
     }
     ovn_lflow_add(lflows, od, S_SWITCH_IN_L2_UNKNOWN, 0, "1",
