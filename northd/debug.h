@@ -24,7 +24,7 @@
 void init_debug_config(const struct nbrec_nb_global *nb);
 void destroy_debug_config(void);
 
-const char *debug_drop_action(void);
+const char *debug_drop_action(const char* flow_desc);
 const char *debug_implicit_drop_action(void);
 
 #endif /* NORTHD_DEBUG_H */

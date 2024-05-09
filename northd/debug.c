@@ -60,7 +60,6 @@ init_debug_config(const struct nbrec_nb_global *nb)
                           config.collector_set_id,
                           config.observation_domain_id);
 
-            ds_put_cstr(&config.drop_action, "/* drop */");
             VLOG_DBG("Debug drop sampling: enabled");
         } else {
             ds_put_cstr(&config.drop_action, "drop;");
@@ -79,12 +78,15 @@ destroy_debug_config(void)
 }
 
 const char *
-debug_drop_action(void) {
+debug_drop_action(const char *flow_desc) {
     if (OVS_UNLIKELY(debug_enabled())) {
-        return ds_cstr_ro(&config.drop_action);
-    } else {
-        return "drop;";
+        if (!flow_desc) {
+            return xasprintf("%s /* drop */", ds_cstr_ro(&config.drop_action));
+        } else {
+            return xasprintf("%s /* drop-reason (%s) */", ds_cstr_ro(&config.drop_action), flow_desc);
+        }
     }
+    return "drop;";
 }
 
 const char *
