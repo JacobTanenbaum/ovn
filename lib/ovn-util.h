@@ -466,6 +466,32 @@ void sorted_array_apply_diff(const struct sorted_array *a1,
                                                     bool add),
                              const void *arg);
 
+/* A wrapper that holds strings */
+struct string_wrapper
+{
+    char *str;
+    bool owns_string;
+};
+
+#define EMPTY_STRING_WRAPPER (struct string_wrapper){NULL, false}
+
+static inline struct string_wrapper
+string_wrapper_create(char *str, bool take_ownership)
+{
+    return (struct string_wrapper) {
+        .str = str,
+        .owns_string = take_ownership,
+    };
+}
+
+static inline void
+string_wrapper_destroy(struct string_wrapper *s)
+{
+    if (s->owns_string) {
+        free(s->str);
+    }
+}
+
 /* Utilities around properly handling exit command. */
 struct ovn_exit_args {
     struct unixctl_conn **conns;

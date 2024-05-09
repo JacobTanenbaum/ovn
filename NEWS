@@ -38,6 +38,8 @@ Post v24.03.0
     ability to disable "VXLAN mode" to extend available tunnel IDs space for
     datapaths from 4095 to 16711680.  For more details see man ovn-nb(5) for
     mentioned option.
+  - Added a new column in the southbound database "flow_desc" to provide
+    human readable context to flows.
 
 OVN v24.03.0 - 01 Mar 2024
 --------------------------
