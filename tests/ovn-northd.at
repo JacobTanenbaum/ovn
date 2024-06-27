@@ -12467,8 +12467,8 @@ OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([check for flow_desc])
 ovn_start
 
-check  ovn-nbctl -- set NB_Global . options:debug_drop_collector_set="123"
-ovn-nbctl ls-add ls1
+check ovn-nbctl -- set NB_Global . options:debug_drop_collector_set="123"
+check ovn-nbctl ls-add ls1
 
 check ovn-nbctl --wait=hv sync
 
