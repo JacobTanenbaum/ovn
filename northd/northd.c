@@ -17565,7 +17565,6 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
                    const struct hmap *lr_ports,
                    struct hmap *mcast_groups,
                    struct hmap *igmp_groups);
-
 static struct sbrec_multicast_group *
 create_sb_multicast_group(struct ovsdb_idl_txn *ovnsb_txn,
                           const struct sbrec_datapath_binding *dp,
@@ -17710,6 +17709,105 @@ lflow_reset_northd_refs(struct lflow_input *lflow_input)
     HMAP_FOR_EACH (lb_dps, hmap_node, lflow_input->lb_datapaths_map) {
         lflow_ref_clear(lb_dps->lflow_ref);
     }
+}
+
+bool lflow_test_handle(struct ovsdb_idl_txn *ovnsb_txn,
+                       struct sbrec_igmp_group_table *igmp_data,
+                       const struct ovn_datapaths *ls_datapaths,
+                       const struct hmap *ls_ports)
+{
+/*
+    VLOG_ERR("I AM HERE NOW\n");
+
+    const struct sbrec_igmp_group *sb_igmp;
+    struct ovn_datapath *od;
+
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED (sb_igmp, igmp_data) {
+         VLOG_ERR("KEYWORD: %s -- %s\n", sb_igmp->chassis_name, sb_igmp->address);  
+
+         // for now not deleting anything 
+        od = ovn_datapath_from_sbrec(&ls_datapaths->datapaths, NULL, sb_igmp->datapath);
+
+        struct in6_addr group_address;
+         if (!strcmp(sb_igmp->address, OVN_IGMP_GROUP_MROUTERS)) {
+             memset(&group_address, 0, sizeof group_address);
+         } else if (!ip46_parse(sb_igmp->address, &group_address)) {
+             static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+             VLOG_WARN_RL(&rl, "invalid IGMP group address: %s", sb_igmp->address);
+             continue;
+         }
+          size_t n_igmp_ports;
+          struct ovn_port **igmp_ports =
+              ovn_igmp_group_get_ports(sb_igmp, &n_igmp_ports, ls_ports);
+
+          if (!igmp_ports) {
+             VLOG_ERR("KEYWORD: WHAT AM I DOING HERE\n");	
+             continue;
+    }
+*/
+
+    return true;
+}
+
+bool lflow_my_test(struct ovsdb_idl_txn *ovnsb_txn, struct sbrec_igmp_group_table *igmp_data, struct lflow_input *input_data, struct lflow_table *lflows)
+{
+    VLOG_ERR("KEYWORD: IN MY TEST\n");
+
+    struct hmap igmp_groups;
+    struct hmap mcast_groups;
+
+    const struct sbrec_igmp_group *sb_igmp;
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED (sb_igmp, igmp_data) {
+         VLOG_ERR("KEYWORD: %s -- %s\n", sb_igmp->chassis_name, sb_igmp->address);  
+    }
+
+        build_mcast_groups(input_data->sbrec_igmp_group_table,
+                       input_data->sbrec_mcast_group_by_name_dp,
+                       input_data->ls_datapaths,
+                       input_data->ls_ports, input_data->lr_ports,
+                       &mcast_groups, &igmp_groups);
+    
+    build_lswitch_and_lrouter_flows(input_data->ls_datapaths,
+                                    input_data->lr_datapaths,
+                                    input_data->ls_ports,
+                                    input_data->lr_ports,
+                                    input_data->ls_port_groups,
+                                    input_data->lr_stateful_table,
+                                    input_data->ls_stateful_table,
+                                    lflows,
+                                    &igmp_groups,
+                                    input_data->meter_groups,
+                                    input_data->lb_datapaths_map,
+                                    input_data->svc_monitor_map,
+                                    input_data->bfd_ports,
+                                    input_data->features,
+                                    input_data->svc_monitor_mac,
+                                    input_data->sampling_apps,
+                                    input_data->parsed_routes,
+                                    input_data->route_policies,
+                                    input_data->route_tables);
+
+    lflow_table_sync_to_sb(lflows, ovnsb_txn, input_data->ls_datapaths,
+                           input_data->lr_datapaths,
+                           input_data->ovn_internal_version_changed,
+                           input_data->sbrec_logical_flow_table,
+                           input_data->sbrec_logical_dp_group_table);
+
+/*
+    //struct ovn_port *op;
+    //->    struct ovn_port *op = ovn_port_find(lr_ports, nb_smb->logical_port);
+        bool handled = lflow_ref_sync_lflows(
+            op->lflow_ref, lflows, ovnsb_txn, input_data->ls_datapaths,
+            input_data->lr_datapaths,
+            input_data->ovn_internal_version_changed,
+            input_data->sbrec_logical_flow_table,
+            input_data->sbrec_logical_dp_group_table);
+
+    if(!handled) {
+        VLOG_ERR("KEYWORD WHAT HAPPENED\n");
+    }
+*/
+    return true;
 }
 
 bool

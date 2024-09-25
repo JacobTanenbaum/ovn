@@ -774,6 +774,9 @@ bool northd_handle_sb_port_binding_changes(
     const struct sbrec_port_binding_table *, struct hmap *ls_ports,
     struct hmap *lr_ports);
 
+bool lflow_test_handle(struct ovsdb_idl_txn *ovnsb_txn, struct sbrec_igmp_group_table *igmp_data, const struct ovn_datapaths *ls_datapaths, const struct hmap *ls_ports);
+bool lflow_my_test(struct ovsdb_idl_txn *ovnsb_txn, struct sbrec_igmp_group_table *igmp_data, struct lflow_input *input_data, struct lflow_table *lflows);
+
 struct tracked_lb_data;
 bool northd_handle_lb_data_changes(struct tracked_lb_data *,
                                    struct ovn_datapaths *ls_datapaths,

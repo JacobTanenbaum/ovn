@@ -219,6 +219,73 @@ lflow_ls_stateful_handler(struct engine_node *node, void *data)
     return true;
 }
 
+bool
+test_handler(struct engine_node *node, void *data)
+{
+    VLOG_ERR("HELLO WORLD!!!\n");
+    struct sbrec_igmp_group_table *igmp_data =
+        EN_OVSDB_GET(engine_get_input("SB_igmp_group", node));
+    
+/*
+    const struct sbrec_igmp_group  *sb_igmp;
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED( sb_igmp, igmp_data) {
+        VLOG_ERR("KEYWORD: %s -- %s\n", sb_igmp->chassis_name, sb_igmp->address);
+        VLOG_ERR("WHY NOT SEE THIS\n");
+        if (sbrec_igmp_group_is_new(sb_igmp)) {
+            printf("KEYWORD: I AM WRONG");
+        }
+    }
+*/
+    //struct hmap mcast_groups;
+    //struct hmap igmp_groups;
+    //build_mcast_groups(igmp_data,
+    //                   lflow_input.sbrec_mcast_group_by_name_dp,
+    //                 lflow_input.ls_datapaths,
+    //                    lflow_input.ls_ports, lflow_input.lr_ports,
+    //                   &mcast_groups, &igmp_groups); 
+    
+    const struct engine_context *eng_ctx = engine_get_context();
+    struct lflow_data *lflow_data = data;
+    struct lflow_input lflow_input;
+
+    lflow_get_input_data(node, &lflow_input);
+    //lflow_test_handle(eng_ctx->ovnsb_idl_txn);
+
+    struct hmap igmp_groups;
+    hmap_init(&igmp_groups);
+
+    //const struct sbrec_igmp_group  *sb_igmp;
+
+    //lflow_test_handle(eng_ctx->ovnsb_idl_txn, igmp_data, lflow_input.ls_datapaths, lflow_input.ls_ports);
+    lflow_my_test(eng_ctx->ovnsb_idl_txn, igmp_data, &lflow_input, lflow_data->lflow_table);
+
+/*
+    build_lswitch_and_lrouter_flows(input_data->ls_datapaths,
+                                    input_data->lr_datapaths,
+                                    input_data->ls_ports,
+                                    input_data->lr_ports,
+                                    input_data->ls_port_groups,
+                                    input_data->lr_stateful_table,
+                                    input_data->ls_stateful_table,
+                                    lflows,
+                                    &igmp_groups,
+                                    input_data->meter_groups,
+                                    input_data->lb_datapaths_map,
+                                    input_data->svc_monitor_map,
+                                    input_data->bfd_ports,
+                                    input_data->features,
+                                    input_data->svc_monitor_mac,
+                                    input_data->sampling_apps,
+                                    input_data->parsed_routes,
+                                    input_data->route_policies,
+                                    input_data->route_tables);
+
+*/
+    
+    engine_set_node_state(node, EN_UPDATED);
+    return true;
+}
+
 void *en_lflow_init(struct engine_node *node OVS_UNUSED,
                      struct engine_arg *arg OVS_UNUSED)
 {
@@ -227,6 +294,7 @@ void *en_lflow_init(struct engine_node *node OVS_UNUSED,
     lflow_table_init(data->lflow_table);
     return data;
 }
+
 
 void en_lflow_cleanup(void *data_)
 {
