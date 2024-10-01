@@ -219,6 +219,23 @@ lflow_ls_stateful_handler(struct engine_node *node, void *data)
     return true;
 }
 
+bool
+lflow_igmp_group_handler(struct engine_node *node, void *data)
+{
+//    const struct sbrec_igmp_group_table *igmp_data = 
+//        EN_OVSDB_GET(engine_get_input("SB_multicast_group", node));
+
+    const struct engine_context *eng_ctx = engine_get_context();
+    struct lflow_data *lflow_data = data;
+    struct lflow_input lflow_input;
+
+    lflow_get_input_data(node, &lflow_input);
+    return lflow_handle_igmp_group_changes(eng_ctx->ovnsb_idl_txn,
+                                     &lflow_input,
+                                     lflow_data->lflow_table);
+    //return false;
+}
+
 void *en_lflow_init(struct engine_node *node OVS_UNUSED,
                      struct engine_arg *arg OVS_UNUSED)
 {

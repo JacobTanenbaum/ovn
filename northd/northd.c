@@ -18069,6 +18069,88 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
     return true;
 }
 
+bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
+                                     struct lflow_input *lflow_input,
+                                     struct lflow_table *lflows)
+{
+    struct hmap my_igmp_groups = HMAP_INITIALIZER(&my_igmp_groups);
+//    struct hmap *igmp_groups;
+  //  hmap_init(igmp_groups);
+
+    const struct sbrec_igmp_group *sb_igmp;
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp, lflow_input->sbrec_igmp_group_table) {
+        if (!strcmp(sb_igmp->address, OVN_IGMP_GROUP_MROUTERS)) {
+            // the OVN_IGMP_GROUP_MROUTERS address it just gets added to the MROUTERS muilticast_group
+            return false;
+        }
+        VLOG_ERR("KEYWORD: checking for - %s\n", sb_igmp->address);
+        struct in6_addr group_address;
+        if (!ip46_parse(sb_igmp->address, &group_address)) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+            VLOG_WARN_RL(&rl, "invalid IGMP group address: %s",
+                         sb_igmp->address);
+            continue;
+        }
+        struct ovn_datapath *od =
+                    ovn_datapath_from_sbrec(&lflow_input->ls_datapaths->datapaths, NULL,
+                                     sb_igmp->datapath);
+
+        /* Extract the IGMP group ports from the SB entry. */
+        size_t n_igmp_ports;
+        struct ovn_port **igmp_ports =
+            ovn_igmp_group_get_ports(sb_igmp, &n_igmp_ports, lflow_input->ls_ports);
+
+        /* It can be that all ports in the IGMP group record already have
+         * mcast_flood=true and then we can skip the group completely.
+         */
+        if (!igmp_ports) {
+            continue;
+        }
+
+        struct ovn_igmp_group *igmp_group =
+            ovn_igmp_group_add(lflow_input->sbrec_mcast_group_by_name_dp, &my_igmp_groups, od,
+                               &group_address, sb_igmp->address);
+
+            if (igmp_group->mcgroup.key == 0) {
+                VLOG_ERR("KEYWORD: NOT SAFE YEE WHO ENTER HERE, %s\n", sb_igmp->address);
+                //LOOK INTO DELETING THE HMAP?
+                return false;
+            }
+            ovn_igmp_group_add_entry(igmp_group, igmp_ports, n_igmp_ports);
+            //igmp_group->mcgroup.key = 0;
+            //
+//        const struct sbrec_multicast_group *mcgroup =
+//            mcast_group_lookup(lflow_input->sbrec_mcast_group_by_name_dp,
+//                               sb_igmp->address,
+//                               sb_igmp->datapath);
+//            if (!mcgroup) {
+               // will have to create a multicast group for this entry 
+//               return false;
+//            }
+    }
+    VLOG_ERR("KEYWORD: SAFE TO ADD LFLOWS\n");
+    /* Generate new lflows. */
+    struct ovn_igmp_group *my_igmp_group;
+    HMAP_FOR_EACH_SAFE (my_igmp_group, hmap_node, &my_igmp_groups) {
+    struct ds match = DS_EMPTY_INITIALIZER;
+    struct ds actions = DS_EMPTY_INITIALIZER;
+    build_lswitch_ip_mcast_igmp_mld(my_igmp_group, lflows,
+                                    &match,
+                                    &actions);
+    }
+
+/*
+ *
+ *
+ *                SOMEWHERE IN HERE THE DATABASE IS SYNCED
+ *
+ *
+ */
+
+   
+    return false;
+}
+
 static bool
 mirror_needs_update(const struct nbrec_mirror *nb_mirror,
                     const struct sbrec_mirror *sb_mirror)
