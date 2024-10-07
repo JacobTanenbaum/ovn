@@ -381,7 +381,7 @@ struct ovn_datapath {
      * This map doesn't include derived ports. */
     struct hmap ports;
 
-    /* references to logical flows referencing igmp_groups for this 
+    /* references to logical flows referencing igmp_groups for this
      * ovn_datapath. */
     struct lflow_ref *igmp_lflow_ref;
 };
@@ -774,6 +774,8 @@ bool lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *,
                                       struct ls_stateful_tracked_data *,
                                       struct lflow_input *,
                                       struct lflow_table *lflows);
+bool lflow_handle_igmp_group_changes(struct lflow_input*,
+                                     struct lflow_table *lflows);
 bool northd_handle_sb_port_binding_changes(
     const struct sbrec_port_binding_table *, struct hmap *ls_ports,
     struct hmap *lr_ports);

@@ -17636,7 +17636,7 @@ void build_lflows(struct ovsdb_idl_txn *ovnsb_txn,
     /* Parallel build may result in a suboptimal hash. Resize the
      * lflow map to a correct size before doing lookups */
     lflow_table_expand(lflows);
-    
+
     stopwatch_start(LFLOWS_TO_SB_STOPWATCH_NAME, time_msec());
     lflow_table_sync_to_sb(lflows, ovnsb_txn, input_data->ls_datapaths,
                            input_data->lr_datapaths,
@@ -18070,6 +18070,17 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
     }
 
     return true;
+}
+
+bool lflow_handle_igmp_group_changes(struct lflow_input *lflow_input,
+                                     struct lflow_table *lflows)
+{
+    const struct sbrec_igmp_group *sb_igmp;
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp, lflow_input->sbrec_igmp_group_table) {
+
+
+    }
+    return false;
 }
 
 static bool
