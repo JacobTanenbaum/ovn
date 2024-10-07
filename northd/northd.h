@@ -380,6 +380,10 @@ struct ovn_datapath {
     /* Map of ovn_port objects belonging to this datapath.
      * This map doesn't include derived ports. */
     struct hmap ports;
+
+    /* references to logical flows referencing igmp_groups for this 
+     * ovn_datapath. */
+    struct lflow_ref *igmp_lflow_ref;
 };
 
 const struct ovn_datapath *ovn_datapath_find(const struct hmap *datapaths,

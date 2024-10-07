@@ -219,6 +219,12 @@ lflow_ls_stateful_handler(struct engine_node *node, void *data)
     return true;
 }
 
+bool
+lflow_igmp_group_handler(struct engine_node *node, void *data)
+{
+    return false;
+}
+
 void *en_lflow_init(struct engine_node *node OVS_UNUSED,
                      struct engine_arg *arg OVS_UNUSED)
 {

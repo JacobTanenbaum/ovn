@@ -462,6 +462,7 @@ ovn_datapath_create(struct hmap *datapaths, const struct uuid *key,
     od->lr_group = NULL;
     hmap_init(&od->ports);
     sset_init(&od->router_ips);
+    od->igmp_lflow_ref = lflow_ref_create();
     return od;
 }
 
@@ -491,6 +492,7 @@ ovn_datapath_destroy(struct hmap *datapaths, struct ovn_datapath *od)
         destroy_mcast_info_for_datapath(od);
         destroy_ports_for_datapath(od);
         sset_destroy(&od->router_ips);
+        lflow_ref_destroy(od->igmp_lflow_ref);
         free(od);
     }
 }
@@ -10198,7 +10200,8 @@ build_lswitch_ip_mcast_igmp_mld(struct ovn_igmp_group *igmp_group,
                       igmp_group->mcgroup.name);
 
         ovn_lflow_add(lflows, igmp_group->datapath, S_SWITCH_IN_L2_LKUP,
-                      90, ds_cstr(match), ds_cstr(actions), NULL);
+                      90, ds_cstr(match), ds_cstr(actions),
+                      igmp_group->datapath->igmp_lflow_ref);
     }
 }
 
