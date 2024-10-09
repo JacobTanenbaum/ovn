@@ -223,12 +223,13 @@ bool
 lflow_igmp_group_handler(struct engine_node *node, void *data)
 {
     const struct sbrec_igmp_group_table *igmp_data =
-        EN_OVSDB_GET(engine_get_input("SB_multicast_group", node));
+        EN_OVSDB_GET(engine_get_input("SB_igmp_group", node));
 
     struct lflow_data * lflow_data = data;
     struct lflow_input lflow_input;
 
     lflow_get_input_data(node, &lflow_input);
+
     return lflow_handle_igmp_group_changes(&lflow_input,lflow_data->lflow_table);
 }
 

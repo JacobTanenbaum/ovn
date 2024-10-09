@@ -22730,6 +22730,7 @@ ovn-nbctl lrp-add rtr rtr-sw1 00:00:00:00:01:00 10.0.0.254/24
 ovn-nbctl lrp-add rtr rtr-sw2 00:00:00:00:02:00 20.0.0.254/24
 ovn-nbctl lrp-add rtr rtr-sw3 00:00:00:00:03:00 30.0.0.254/24
 
+
 ovn-nbctl lsp-add sw1 sw1-rtr                      \
     -- lsp-set-type sw1-rtr router                 \
     -- lsp-set-addresses sw1-rtr 00:00:00:00:01:00 \
@@ -22859,6 +22860,10 @@ send_igmp_v3_report hv2-vif1 hv2 000000000002 $(ip_to_hex 10 0 0 2) f9f9 \
 wait_row_count IGMP_Group 2 address=239.0.1.68
 wait_row_count IGMP_Group 2 protocol=IGMPv3
 check ovn-nbctl --wait=hv sync
+echo "yyyyy"
+echo "multicast"
+ovn-sbctl list Multicast_Group
+echo "yyyyy"
 
 AT_CAPTURE_FILE([sbflows3])
 ovn-sbctl dump-flows > sbflows3
@@ -24110,6 +24115,10 @@ send_igmp_v3_query br-phys-1_n1 hv2 000000000142 $(ip_to_hex 10 0 0 42) 8fb1 exp
 
 dnl Wait for the mrouter to be learned by both chassis.
 wait_row_count IGMP_Group 2 address=mrouters datapath=$sw1
+echo "yyy IGMP_GROUP AFTER yyyyyy"
+ovn-sbctl list IGMP_Group
+echo "yyyyyyy"
+ovn-sbctl list Multicast_Group
 
 dnl The query should have been flooded in the broadcast domain.
 : > expected_empty
@@ -34467,7 +34476,7 @@ check ovs-vsctl add-port br-int ls0-hv -- set Interface ls0-hv external-ids:ifac
 check ovn-nbctl lr-add lr0
 
 check ovn-nbctl ls-add ls0
-check ovn-nbctl lsp-add ls0 ls0-lr0 
+check ovn-nbctl lsp-add ls0 ls0-lr0
 check ovn-nbctl lsp-set-type ls0-lr0 router
 check ovn-nbctl lsp-set-addresses ls0-lr0 router
 check ovn-nbctl lrp-add lr0 lr0-ls0 00:00:00:00:00:01 10.0.0.1

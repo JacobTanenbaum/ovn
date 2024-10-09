@@ -17571,6 +17571,16 @@ void run_update_worker_pool(int n_threads)
     }
 }
 
+
+static void
+my_build_mcast_group(const struct sbrec_igmp_group *sb_igmp,
+                   struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp,
+                   const struct ovn_datapaths *ls_datapaths,
+                   const struct hmap *ls_ports,
+                   const struct hmap *lr_ports,
+                   struct hmap *mcast_groups,
+                   struct hmap *igmp_groups);
+
 static void
 build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
                    struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp,
@@ -18075,13 +18085,142 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
 bool lflow_handle_igmp_group_changes(struct lflow_input *lflow_input,
                                      struct lflow_table *lflows)
 {
+    struct hmap mcast_groups = HMAP_INITIALIZER(&mcast_groups);
+    struct hmap igmp_groups = HMAP_INITIALIZER(&igmp_groups);
+
     const struct sbrec_igmp_group *sb_igmp;
     SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp, lflow_input->sbrec_igmp_group_table) {
+    my_build_mcast_group(sb_igmp,
+                       lflow_input->sbrec_mcast_group_by_name_dp,
+                       lflow_input->ls_datapaths,
+                       lflow_input->ls_ports,
+                       lflow_input->lr_ports,
+                       &mcast_groups,
+                       &igmp_groups);
+    }
+
+    struct ovn_igmp_group *igmp_group;
+    HMAP_FOR_EACH_SAFE (igmp_group, hmap_node, &igmp_groups) {
+        VLOG_ERR("KEYWORD THESE ARE THE IGMP_GROUP ADDRESSES? %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+        VLOG_ERR("KEYWORD:\tWITH THIS MANY ENTRIES %ld",  ovs_list_size(&igmp_group->entries));
+    }
+    struct ovn_multicast *mc;
+    HMAP_FOR_EACH_SAFE (mc, hmap_node, &mcast_groups) {
+        VLOG_ERR("KEYWORD THESE ARE THE MCAST_GROUPS? %s", mc->group->name);
+    }
+    return false;
+
+}
+/*
+{
+    struct hmap mcast_groups = HMAP_INITIALIZER(&mcast_groups);
+    struct hmap igmp_groups = HMAP_INITIALIZER(&igmp_groups);
+    const struct sbrec_igmp_group *sb_igmp;
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp, lflow_input->sbrec_igmp_group_table) {
+        const struct sbrec_multicast_group *mcgroup =
+            mcast_group_lookup(lflow_input->sbrec_mcast_group_by_name_dp,
+                               sb_igmp->address,
+                               sb_igmp->datapath);
+
+        if(!mcgroup) {
+            VLOG_ERR("KEYWORD: THIS IS an IGMP GROUP WITH A UNIQUE Address!!!\n");
+        struct in6_addr group_address;
+        if (!strcmp(sb_igmp->address, OVN_IGMP_GROUP_MROUTERS)) {
+            // Use all-zeros IP to denote a group corresponding to mrouters.
+            memset(&group_address, 0, sizeof group_address);
+            return false; //KEYWORD -> I want to make this simplier...
+        } else if (!ip46_parse(sb_igmp->address, &group_address)) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+            VLOG_WARN_RL(&rl, "invalid IGMP group address: %s",
+                         sb_igmp->address);
+            continue;
+        }
+            struct ovn_datapath *od =
+                ovn_datapath_from_sbrec(&lflow_input->ls_datapaths->datapaths, NULL, sb_igmp->datapath);
+            struct ovn_igmp_group *igmp_group =
+                ovn_igmp_group_add(lflow_input->sbrec_mcast_group_by_name_dp, &igmp_groups, od, &group_address, sb_igmp->address);
+            // Extract the IGMP group ports from the SB entry.
+            size_t n_igmp_ports;
+            struct ovn_port **igmp_ports =
+                ovn_igmp_group_get_ports(sb_igmp, &n_igmp_ports, lflow_input->ls_ports);
+            // Add the extracted ports to the IGMP group.
+            ovn_igmp_group_add_entry(igmp_group, igmp_ports, n_igmp_ports);
+        }
+    }
+    struct ovn_igmp_group *igmp_group;
+    HMAP_FOR_EACH_SAFE (igmp_group, hmap_node, &igmp_groups) {
+        VLOG_ERR("KEYWORD THESE ARE THE IGMP_GROUP ADDRESSES? %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+        VLOG_ERR("KEYWORD:\tWITH THIS MANY ENTRIES %ld",  ovs_list_size(&igmp_group->entries));
 
 
     }
     return false;
 }
+*/
+/*
+bool lflow_handle_igmp_group_changes(struct lflow_input *lflow_input,
+                                     struct lflow_table *lflows)
+{
+VLOG_ERR("KEYWORD: START TRANSACTION?\n");
+    struct hmap mcast_groups = HMAP_INITIALIZER(&mcast_groups);
+    struct hmap igmp_groups = HMAP_INITIALIZER(&igmp_groups);
+    const struct sbrec_igmp_group *sb_igmp;
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp, lflow_input->sbrec_igmp_group_table) {
+
+        const struct sbrec_multicast_group *mcgroup =
+            mcast_group_lookup(lflow_input->sbrec_mcast_group_by_name_dp,
+                               sb_igmp->address,
+                               sb_igmp->datapath);
+        if (!mcgroup) {
+            VLOG_ERR("KEYWORD: TOTALLY NEW - address: %s\n", sb_igmp->address);
+        struct in6_addr group_address;
+        if (!strcmp(sb_igmp->address, OVN_IGMP_GROUP_MROUTERS)) {
+            // Use all-zeros IP to denote a group corresponding to mrouters.
+            memset(&group_address, 0, sizeof group_address);
+        } else if (!ip46_parse(sb_igmp->address, &group_address)) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+            VLOG_WARN_RL(&rl, "invalid IGMP group address: %s",
+                         sb_igmp->address);
+            continue;
+        }
+        struct ovn_datapath *od =
+            ovn_datapath_from_sbrec(&lflow_input->ls_datapaths->datapaths, NULL, sb_igmp->datapath);
+
+        VLOG_ERR("KEYWORD: I AM HERE\n");
+        struct ovn_igmp_group *igmp_group =
+            ovn_igmp_group_add(lflow_input->sbrec_mcast_group_by_name_dp, &igmp_groups, od, &group_address, sb_igmp->address);
+        } else if (sbrec_igmp_group_is_deleted(sb_igmp)) {
+            VLOG_ERR("KEYWORD: DELETING\n");
+                if (mcgroup->n_ports == 1) {
+                    VLOG_ERR("THIS IS REALLY DELETING\n");
+                }
+                // del all the ports?
+                for (size_t i = 0; i < sb_igmp->n_ports; i++ ){
+                    VLOG_ERR("KEYWORD: deleting %s to mcast group %s\n",sb_igmp->ports[i]->logical_port, mcgroup->name);
+                    sbrec_multicast_group_update_ports_delvalue(mcgroup, sb_igmp->ports[i]);
+
+                }
+
+        } else {
+            VLOG_ERR("KEYWORD: EDITING A GROUP WITH A mcgroup\n");
+            for (size_t i = 0; i < sb_igmp->n_ports; i++ ){
+                VLOG_ERR("KEYWORD: adding %s to mcast group %s\n",sb_igmp->ports[i]->logical_port, mcgroup->name);
+                sbrec_multicast_group_update_ports_addvalue(mcgroup, sb_igmp->ports[i]);
+
+            }
+        }
+    }
+
+if (!hmap_is_empty(&igmp_groups)) {
+    VLOG_ERR("KEYWORD: THIS NEW? END FALSE\n");
+
+    return false;
+}
+
+VLOG_ERR("KEYWORD: END TRUE?\n");
+    return true;
+}
+*/
 
 static bool
 mirror_needs_update(const struct nbrec_mirror *nb_mirror,
@@ -18353,6 +18492,214 @@ build_ip_mcast(struct ovsdb_idl_txn *ovnsb_txn,
     }
 }
 
+////
+static void
+my_build_mcast_group(const struct sbrec_igmp_group *sb_igmp,
+                   struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp,
+                   const struct ovn_datapaths *ls_datapaths,
+                   const struct hmap *ls_ports,
+                   const struct hmap *lr_ports,
+                   struct hmap *mcast_groups,
+                   struct hmap *igmp_groups)
+{
+    struct ovn_port *op;
+
+    struct ovn_datapath *od;
+
+    HMAP_FOR_EACH (od, key_node, &ls_datapaths->datapaths) {
+        init_mcast_flow_count(od);
+    }
+
+    HMAP_FOR_EACH (op, key_node, lr_ports) {
+        if (lrport_is_enabled(op->nbrp)) {
+            /* If this port is configured to always flood multicast traffic
+             * add it to the MC_STATIC group.
+             */
+            if (op->mcast_info.flood) {
+                ovn_multicast_add(mcast_groups, &mc_static, op);
+                op->od->mcast_info.rtr.flood_static = true;
+            }
+        }
+    }
+
+    HMAP_FOR_EACH (op, key_node, ls_ports) {
+        if (lsp_is_enabled(op->nbsp)) {
+            ovn_multicast_add(mcast_groups, &mc_flood, op);
+
+            if (!lsp_is_router(op->nbsp)) {
+                ovn_multicast_add(mcast_groups, &mc_flood_l2, op);
+            }
+
+            if (op->has_unknown) {
+                ovn_multicast_add(mcast_groups, &mc_unknown, op);
+            }
+
+            /* If this port is connected to a multicast router then add it
+             * to the MC_MROUTER_FLOOD group.
+             */
+            if (op->od->mcast_info.sw.flood_relay && op->peer &&
+                    op->peer->od && op->peer->od->mcast_info.rtr.relay) {
+                ovn_multicast_add(mcast_groups, &mc_mrouter_flood, op);
+            }
+
+            /* If this port is configured to always flood multicast reports
+             * add it to the MC_MROUTER_FLOOD group (all reports must be
+             * flooded to statically configured or learned mrouters).
+             */
+            if (op->mcast_info.flood_reports) {
+                ovn_multicast_add(mcast_groups, &mc_mrouter_flood, op);
+                op->od->mcast_info.sw.flood_reports = true;
+            }
+
+            /* If this port is configured to always flood multicast traffic
+             * add it to the MC_STATIC group.
+             */
+            if (op->mcast_info.flood) {
+                ovn_multicast_add(mcast_groups, &mc_static, op);
+                op->od->mcast_info.sw.flood_static = true;
+            }
+        }
+    }
+
+
+        /* If this is a stale group (e.g., controller had crashed,
+         * purge it).
+         */
+        if (!sb_igmp->chassis || !sb_igmp->datapath) {
+            sbrec_igmp_group_delete(sb_igmp);
+            return;
+        }
+
+        /* If the datapath value is stale, purge the group. */
+        od = ovn_datapath_from_sbrec(&ls_datapaths->datapaths, NULL,
+                                     sb_igmp->datapath);
+
+        if (!od || ovn_datapath_is_stale(od)) {
+            sbrec_igmp_group_delete(sb_igmp);
+            return;
+        }
+
+        struct in6_addr group_address;
+        if (!strcmp(sb_igmp->address, OVN_IGMP_GROUP_MROUTERS)) {
+            /* Use all-zeros IP to denote a group corresponding to mrouters. */
+            memset(&group_address, 0, sizeof group_address);
+        } else if (!ip46_parse(sb_igmp->address, &group_address)) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+            VLOG_WARN_RL(&rl, "invalid IGMP group address: %s",
+                         sb_igmp->address);
+            return;
+        }
+
+        /* Extract the IGMP group ports from the SB entry. */
+        size_t n_igmp_ports;
+        struct ovn_port **igmp_ports =
+            ovn_igmp_group_get_ports(sb_igmp, &n_igmp_ports, ls_ports);
+
+        /* It can be that all ports in the IGMP group record already have
+         * mcast_flood=true and then we can skip the group completely.
+         */
+        if (!igmp_ports) {
+            return;
+        }
+
+        /* Add the IGMP group entry. Will also try to allocate an ID for it
+         * if the multicast group already exists.
+         */
+        struct ovn_igmp_group *igmp_group =
+            ovn_igmp_group_add(sbrec_mcast_group_by_name_dp, igmp_groups, od,
+                               &group_address, sb_igmp->address);
+
+        /* Add the extracted ports to the IGMP group. */
+        ovn_igmp_group_add_entry(igmp_group, igmp_ports, n_igmp_ports);
+
+    /* Build IGMP groups for multicast routers with relay enabled. The router
+     * IGMP groups are based on the groups learnt by their multicast enabled
+     * peers.
+     */
+    HMAP_FOR_EACH (od, key_node, &ls_datapaths->datapaths) {
+
+        if (ovs_list_is_empty(&od->mcast_info.groups)) {
+            continue;
+        }
+
+        for (size_t i = 0; i < od->n_router_ports; i++) {
+            struct ovn_port *router_port = od->router_ports[i]->peer;
+
+            /* If the router the port connects to doesn't have multicast
+             * relay enabled or if it was already configured to flood
+             * multicast traffic then skip it.
+             */
+            if (!router_port || !router_port->od ||
+                    !router_port->od->mcast_info.rtr.relay ||
+                    router_port->mcast_info.flood) {
+                continue;
+            }
+
+            struct ovn_igmp_group *igmp_group;
+            LIST_FOR_EACH (igmp_group, list_node, &od->mcast_info.groups) {
+                struct in6_addr *address = &igmp_group->address;
+
+                /* Skip mrouter entries. */
+                if (!strcmp(igmp_group->mcgroup.name,
+                            OVN_IGMP_GROUP_MROUTERS)) {
+                    continue;
+                }
+
+                /* For IPv6 only relay routable multicast groups
+                 * (RFC 4291 2.7).
+                 */
+                if (!IN6_IS_ADDR_V4MAPPED(address) &&
+                        !ipv6_addr_is_routable_multicast(address)) {
+                    continue;
+                }
+
+                struct ovn_igmp_group *igmp_group_rtr =
+                    ovn_igmp_group_add(sbrec_mcast_group_by_name_dp,
+                                       igmp_groups, router_port->od,
+                                       address, igmp_group->mcgroup.name);
+                struct ovn_port **router_igmp_ports =
+                    xmalloc(sizeof *router_igmp_ports);
+                /* Store the chassis redirect port  otherwise traffic will not
+                 * be tunneled properly.
+                 */
+                router_igmp_ports[0] = router_port->cr_port
+                                       ? router_port->cr_port
+                                       : router_port;
+                ovn_igmp_group_add_entry(igmp_group_rtr, router_igmp_ports, 1);
+            }
+        }
+    }
+
+    /* Walk the aggregated IGMP groups and allocate IDs for new entries.
+     * Then store the ports in the associated multicast group.
+     * Mrouter entries are also stored as IGMP groups, deal with those
+     * explicitly.
+     */
+    struct ovn_igmp_group *new_igmp_group;
+    HMAP_FOR_EACH_SAFE (new_igmp_group, hmap_node, igmp_groups) {
+
+        /* If this is a mrouter entry just aggregate the mrouter ports
+         * into the MC_MROUTER mcast_group and destroy the igmp_group;
+         * no more processing needed. */
+        if (!strcmp(igmp_group->mcgroup.name, OVN_IGMP_GROUP_MROUTERS)) {
+            ovn_igmp_mrouter_aggregate_ports(igmp_group, mcast_groups);
+            ovn_igmp_group_destroy(igmp_groups, new_igmp_group);
+            continue;
+        }
+
+        if (!ovn_igmp_group_allocate_id(igmp_group)) {
+            /* If we ran out of keys just destroy the entry. */
+            ovn_igmp_group_destroy(igmp_groups, new_igmp_group);
+            continue;
+        }
+
+        /* Aggregate the ports from all entries corresponding to this
+         * group.
+         */
+        ovn_igmp_group_aggregate_ports(igmp_group, mcast_groups);
+    }
+}
+/////
 static void
 build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
                    struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp,
