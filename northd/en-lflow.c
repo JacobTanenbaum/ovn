@@ -71,6 +71,10 @@ lflow_get_input_data(struct engine_node *node,
                           engine_get_input("SB_multicast_group", node),
                          "sbrec_mcast_group_by_name");
 
+    lflow_input->sbrec_igmp_groups_by_address_dp =
+        engine_ovsdb_node_get_index(
+            engine_get_input("SB_igmp_group", node),
+            "sbrec_igmp_groups_by_address");
     lflow_input->ls_datapaths = &northd_data->ls_datapaths;
     lflow_input->lr_datapaths = &northd_data->lr_datapaths;
     lflow_input->ls_ports = &northd_data->ls_ports;
@@ -229,8 +233,9 @@ lflow_igmp_group_handler(struct engine_node *node, void *data)
     struct lflow_input lflow_input;
 
     lflow_get_input_data(node, &lflow_input);
+    const struct engine_context *eng_ctx = engine_get_context();
 
-    return lflow_handle_igmp_group_changes(&lflow_input,lflow_data->lflow_table);
+    return lflow_handle_igmp_group_changes(eng_ctx->ovnsb_idl_txn, &lflow_input,lflow_data->lflow_table);
 }
 
 void *en_lflow_init(struct engine_node *node OVS_UNUSED,

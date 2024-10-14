@@ -355,6 +355,10 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
                          ha_chassis_group_index_create(sb->idl);
     struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp =
                          mcast_group_index_create(sb->idl);
+    struct ovsdb_idl_index *sbrec_igmp_groups_by_address_dp =
+                         ovsdb_idl_index_create2(sb->idl, &sbrec_igmp_group_col_address, &sbrec_igmp_group_col_datapath);
+//        = ovsdb_idl_index_create2(sb->idl, &sbrec_fdb_col_dp_key,
+  //                                &sbrec_fdb_col_port_key);
     struct ovsdb_idl_index *sbrec_ip_mcast_by_dp =
                          ip_mcast_index_create(sb->idl);
     struct ovsdb_idl_index *sbrec_chassis_by_hostname =
@@ -380,6 +384,9 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_ovsdb_node_add_index(&en_sb_multicast_group,
                                 "sbrec_mcast_group_by_name",
                                 sbrec_mcast_group_by_name_dp);
+    engine_ovsdb_node_add_index(&en_sb_igmp_group,
+                                "sbrec_igmp_groups_by_address",
+                                sbrec_igmp_groups_by_address_dp);
     engine_ovsdb_node_add_index(&en_sb_ip_multicast,
                                 "sbrec_ip_mcast_by_dp",
                                 sbrec_ip_mcast_by_dp);

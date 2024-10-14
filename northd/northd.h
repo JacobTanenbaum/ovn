@@ -210,6 +210,7 @@ struct lflow_input {
 
     /* Indexes */
     struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp;
+    struct ovsdb_idl_index *sbrec_igmp_groups_by_address_dp;
 
     const struct ovn_datapaths *ls_datapaths;
     const struct ovn_datapaths *lr_datapaths;
@@ -774,7 +775,8 @@ bool lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *,
                                       struct ls_stateful_tracked_data *,
                                       struct lflow_input *,
                                       struct lflow_table *lflows);
-bool lflow_handle_igmp_group_changes(struct lflow_input*,
+bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
+                                     struct lflow_input*,
                                      struct lflow_table *lflows);
 bool northd_handle_sb_port_binding_changes(
     const struct sbrec_port_binding_table *, struct hmap *ls_ports,
