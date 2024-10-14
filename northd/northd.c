@@ -18086,18 +18086,27 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
     const struct sbrec_igmp_group *sb_igmp;
     SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp,lflow_input->sbrec_igmp_group_table) {
-        VLOG_ERR("KEYWORD IGMP_GROUP CHANGED FOR an address %s\n", sb_igmp->address);
+        VLOG_ERR("KEYWORD IGMP_GROUP CHANGED FOR an address %s - datapath %ld\n", sb_igmp->address, sb_igmp->datapath->tunnel_key);
         const struct sbrec_igmp_group *target = sbrec_igmp_group_index_init_row(lflow_input->sbrec_igmp_groups_by_address_dp);
-        sbrec_igmp_group_index_set_address(target, sb_igmp->address);
+        //sbrec_igmp_group_index_set_address(target, sb_igmp->address);
         sbrec_igmp_group_index_set_datapath(target, sb_igmp->datapath);
         struct sbrec_igmp_group *igmp_group_matching_address;
         SBREC_IGMP_GROUP_FOR_EACH_EQUAL(igmp_group_matching_address, target, lflow_input->sbrec_igmp_groups_by_address_dp) {
+            VLOG_ERR("KEYWORD: PRINTING OUT %s\n", igmp_group_matching_address->address);
             if (!sbrec_igmp_group_is_deleted(igmp_group_matching_address)) {
                 my_igmp_group_thing(igmp_group_matching_address, lflow_input->ls_datapaths, lflow_input->sbrec_mcast_group_by_name_dp, &igmp_groups, lflow_input->ls_ports);
             } else {
                 VLOG_ERR("KEYWORD: DELETING A THING FOR ADDRESS %s\n",igmp_group_matching_address->address);
             }
         }
+        // clear lflows for this datapath
+        struct ovn_datapath *od = ovn_datapath_from_sbrec(
+            &lflow_input->ls_datapaths->datapaths,
+            &lflow_input->lr_datapaths->datapaths,
+            sb_igmp->datapath);
+        lflow_ref_unlink_lflows(od->igmp_lflow_ref);
+
+
     }
 
     struct ovn_igmp_group *igmp_group;
@@ -18106,6 +18115,7 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
         if (igmp_group->mcgroup.key== 0) {
             VLOG_ERR("KEYWORD: SHOULD BE ADDING LFLOW\n");
             ovn_igmp_group_allocate_id(igmp_group);
+        }
             struct ds actions = DS_EMPTY_INITIALIZER;
             struct ds match = DS_EMPTY_INITIALIZER;
             build_lswitch_ip_mcast_igmp_mld(igmp_group, lflows, &actions, &match);
@@ -18115,7 +18125,6 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
                 lflow_input->ovn_internal_version_changed,
                 lflow_input->sbrec_logical_flow_table,
                 lflow_input->sbrec_logical_dp_group_table);
-        }
     }
 
     struct ovn_multicast *mcast;
