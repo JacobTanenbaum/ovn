@@ -18118,6 +18118,19 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
         }
             struct ds actions = DS_EMPTY_INITIALIZER;
             struct ds match = DS_EMPTY_INITIALIZER;
+            if (ovn_datapath_get_type(igmp_group->datapath) == DP_SWITCH) {
+                VLOG_ERR("KEYWORD: SWITCH TYPE\n");
+            }
+            if (ovn_datapath_get_type(igmp_group->datapath) == DP_ROUTER) {
+                VLOG_ERR("KEYWORD: ROUTER TYPE\n");
+                VLOG_ERR("KEYWORD THESE ARE THE IGMP_GROUP ADDRESSES? %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+//build_mcast_lookup_flows_for_lrouter(
+//        struct ovn_datapath *od, struct lflow_table *lflows,
+//        struct ds *match, struct ds *actions,
+//        struct lflow_ref *lflow_ref)
+                build_mcast_lookup_flows_for_lrouter(igmp_group->datapath, lflows, &match, &actions, igmp_group->datapath->igmp_lflow_ref);
+
+            }
             build_lswitch_ip_mcast_igmp_mld(igmp_group, lflows, &actions, &match);
             lflow_ref_sync_lflows(
                 igmp_group->datapath->igmp_lflow_ref, lflows, ovnsb_txn, lflow_input->ls_datapaths,
@@ -19334,4 +19347,55 @@ static void my_igmp_group_thing(const struct sbrec_igmp_group *sb_igmp, const st
 
         /* Add the extracted ports to the IGMP group. */
         ovn_igmp_group_add_entry(igmp_group, igmp_ports, n_igmp_ports);
+
+        if (ovs_list_is_empty(&od->mcast_info.groups)) {
+            return;
+       }
+
+        for (size_t i = 0; i < od->n_router_ports; i++) {
+            struct ovn_port *router_port = od->router_ports[i]->peer;
+
+            /* If the router the port connects to doesn't have multicast
+             * relay enabled or if it was already configured to flood
+             * multicast traffic then skip it.
+             */
+            if (!router_port || !router_port->od ||
+                    !router_port->od->mcast_info.rtr.relay ||
+                    router_port->mcast_info.flood) {
+                continue;
+            }
+
+            struct ovn_igmp_group *new_igmp_group;
+            LIST_FOR_EACH (new_igmp_group, list_node, &od->mcast_info.groups) {
+                struct in6_addr *address = &igmp_group->address;
+
+                /* Skip mrouter entries. */
+                if (!strcmp(new_igmp_group->mcgroup.name,
+                            OVN_IGMP_GROUP_MROUTERS)) {
+                    continue;
+                }
+
+                /* For IPv6 only relay routable multicast groups
+                 * (RFC 4291 2.7).
+                 */
+                if (!IN6_IS_ADDR_V4MAPPED(address) &&
+                        !ipv6_addr_is_routable_multicast(address)) {
+                    continue;
+                }
+
+                struct ovn_igmp_group *igmp_group_rtr =
+                    ovn_igmp_group_add(sbrec_mcast_group_by_name_dp,
+                                       igmp_groups, router_port->od,
+                                       address, new_igmp_group->mcgroup.name);
+                struct ovn_port **router_igmp_ports =
+                    xmalloc(sizeof *router_igmp_ports);
+                /* Store the chassis redirect port  otherwise traffic will not
+                 * be tunneled properly.
+                 */
+                router_igmp_ports[0] = router_port->cr_port
+                                       ? router_port->cr_port
+                                       : router_port;
+                ovn_igmp_group_add_entry(igmp_group_rtr, router_igmp_ports, 1);
+            }
+        }
 }
