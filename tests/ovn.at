@@ -23077,14 +23077,18 @@ send_ip_multicast_pkt hv2-vif4 hv2 \
     000000000001 01005e000144 \
     $(ip_to_hex 10 0 0 42) $(ip_to_hex 239 0 1 68) 1e 20 ca70 11 \
     e518e518000a3b3a0000
+ovn-sbctl dump-flows > dumped_flows-1
 store_ip_multicast_pkt \
     000000000100 01005e000144 \
     $(ip_to_hex 10 0 0 42) $(ip_to_hex 239 0 1 68) 1e 1f cb70 11 \
     e518e518000a3b3a0000 expected_routed_sw1
+ovn-sbctl dump-flows > dumped_flows-2
 store_ip_multicast_pkt \
     000000000200 01005e000144 \
     $(ip_to_hex 10 0 0 42) $(ip_to_hex 239 0 1 68) 1e 1f cb70 11 \
     e518e518000a3b3a0000 expected_routed_sw2
+ovn-sbctl dump-flows > dumped_flows-3
+ovs-ofctl -O OpenFlow13 dump-flows br-int > openflow
 
 echo "yyy IGMP_GROUP AFTER yyyyyy"
 ovn-sbctl list IGMP_Group
@@ -23092,6 +23096,8 @@ echo "yyyyyyy"
 echo "Multicast_Group AFTER"
 ovn-sbctl list Multicast_Group
 echo "just here?"
+
+ovn-sbctl dump-flows > dumped_flows
 OVS_WAIT_UNTIL(
   [check_packets 'hv1/vif1-tx.pcap expected_routed_sw1' \
                  'hv2/vif3-tx.pcap expected_routed_sw2' \

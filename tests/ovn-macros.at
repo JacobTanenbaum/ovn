@@ -879,6 +879,7 @@ send_ip_multicast_pkt() {
 
     check as $hv ovs-appctl netdev-dummy/receive ${inport} ${packet}
     as $hv ovs-appctl ofproto/trace br-int in_port=${inport} ${packet} > output
+    as $hv ovs-appctl ofproto/trace br-int in_port=${inport} ${packet} | ovn-detrace > detrace
 }
 
 # store_ip_multicast_pkt ETH_SRC ETH_DST IP_SRC IP_DST IP_LEN TTL
