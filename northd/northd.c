@@ -18114,7 +18114,6 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
         init_mcast_info_for_datapath(igmp_group->datapath);
         ovn_igmp_group_aggregate_ports(igmp_group, &mcast_groups);
         if (igmp_group->mcgroup.key== 0) {
-            VLOG_ERR("KEYWORD: SHOULD BE ADDING LFLOW\n");
             ovn_igmp_group_allocate_id(igmp_group);
         }
             struct ds actions = DS_EMPTY_INITIALIZER;
