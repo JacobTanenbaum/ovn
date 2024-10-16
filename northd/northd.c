@@ -18119,11 +18119,10 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
             struct ds actions = DS_EMPTY_INITIALIZER;
             struct ds match = DS_EMPTY_INITIALIZER;
             if (ovn_datapath_get_type(igmp_group->datapath) == DP_SWITCH) {
-                VLOG_ERR("KEYWORD: SWITCH TYPE\n");
+                VLOG_ERR("KEYWORD: SWITCH TYPE - GROUP ADDRESS %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
             }
             if (ovn_datapath_get_type(igmp_group->datapath) == DP_ROUTER) {
-                VLOG_ERR("KEYWORD: ROUTER TYPE\n");
-                VLOG_ERR("KEYWORD THESE ARE THE IGMP_GROUP ADDRESSES? %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+                VLOG_ERR("KEYWORD: ROUTER TYPE - GROUP ADDRESS %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
 //build_mcast_lookup_flows_for_lrouter(
 //        struct ovn_datapath *od, struct lflow_table *lflows,
 //        struct ds *match, struct ds *actions,
@@ -18139,10 +18138,16 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
                 lflow_input->sbrec_logical_flow_table,
                 lflow_input->sbrec_logical_dp_group_table);
     }
+    // test iterator
+    struct ovn_multicast *mcast_test;
+    HMAP_FOR_EACH_SAFE(mcast_test, hmap_node, &mcast_groups) {
+        VLOG_ERR("KEYWORD MCAST GROUP NAME = %s\n",mcast_test->group->name);
+        VLOG_ERR("\tKEYWORD: number of ports %ld\n", mcast_test->n_ports);
 
+    }
+    // end test iterator
     struct ovn_multicast *mcast;
     HMAP_FOR_EACH_SAFE(mcast, hmap_node, &mcast_groups){
-
         const struct sbrec_multicast_group *mcgroup =
             mcast_group_lookup(lflow_input->sbrec_mcast_group_by_name_dp,
                                mcast->group->name,

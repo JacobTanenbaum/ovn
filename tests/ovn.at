@@ -22860,12 +22860,6 @@ send_igmp_v3_report hv2-vif1 hv2 000000000002 $(ip_to_hex 10 0 0 2) f9f9 \
 wait_row_count IGMP_Group 2 address=239.0.1.68
 wait_row_count IGMP_Group 2 protocol=IGMPv3
 check ovn-nbctl --wait=hv sync
-echo "yyyyy"
-echo "multicast"
-ovn-sbctl list Multicast_Group
-echo "yyyyy"
-ovn-sbctl list IGMP_Group
-echo "xxxx"
 
 AT_CAPTURE_FILE([sbflows3])
 ovn-sbctl dump-flows > sbflows3
@@ -23090,12 +23084,6 @@ store_ip_multicast_pkt \
 ovn-sbctl dump-flows > dumped_flows-3
 ovs-ofctl -O OpenFlow13 dump-flows br-int > openflow
 
-echo "yyy IGMP_GROUP AFTER yyyyyy"
-ovn-sbctl list IGMP_Group
-echo "yyyyyyy"
-echo "Multicast_Group AFTER"
-ovn-sbctl list Multicast_Group > dumped_multicast
-echo "just here?"
 ovn-nbctl list logical_switch
 #ovn-nbctl --bare --columns _uuid find logical_router_policy priority=2000
 
@@ -23174,6 +23162,9 @@ store_ip_multicast_pkt \
     $(ip_to_hex 10 0 0 42) $(ip_to_hex 239 0 1 68) 1e 1f cb70 11 \
     e518e518000a3b3a0000 expected_routed_sw2
 
+echo "yyyyy"
+ovn-sbctl list IGMP_Group
+echo "xxxx"
 OVS_WAIT_UNTIL(
   [check_packets 'hv1/vif1-tx.pcap expected_routed_sw1' \
                  'hv2/vif3-tx.pcap expected_routed_sw2' \
@@ -24181,12 +24172,6 @@ send_igmp_v3_report hv1-vif1 hv1 \
    $(ip_to_hex 239 0 1 68) 04 e9b9 \
    expected
 
-echo "yyy IGMP_GROUP AFTER yyyyyy"
-ovn-sbctl list IGMP_Group
-echo "yyyyyyy"
-echo "Multicast_Group AFTER"
-ovn-sbctl list Multicast_Group
-echo "just here?"
 OVS_WAIT_UNTIL(
   [check_packets 'hv1/vif1-tx.pcap expected_empty' \
                  'hv1/vif2-tx.pcap expected_empty' \
