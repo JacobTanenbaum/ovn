@@ -23094,8 +23094,11 @@ echo "yyy IGMP_GROUP AFTER yyyyyy"
 ovn-sbctl list IGMP_Group
 echo "yyyyyyy"
 echo "Multicast_Group AFTER"
-ovn-sbctl list Multicast_Group
+ovn-sbctl list Multicast_Group > dumped_multicast
 echo "just here?"
+ovn-nbctl list logical_switch
+#ovn-nbctl --bare --columns _uuid find logical_router_policy priority=2000
+
 
 ovn-sbctl dump-flows > dumped_flows
 OVS_WAIT_UNTIL(
