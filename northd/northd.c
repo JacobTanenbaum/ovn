@@ -18111,6 +18111,7 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
     struct ovn_igmp_group *igmp_group;
     HMAP_FOR_EACH_SAFE (igmp_group, hmap_node, &igmp_groups) {
+        init_mcast_info_for_datapath(igmp_group->datapath);
         ovn_igmp_group_aggregate_ports(igmp_group, &mcast_groups);
         if (igmp_group->mcgroup.key== 0) {
             VLOG_ERR("KEYWORD: SHOULD BE ADDING LFLOW\n");
