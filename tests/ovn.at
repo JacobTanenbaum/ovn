@@ -23084,7 +23084,7 @@ store_ip_multicast_pkt \
 ovn-sbctl dump-flows > dumped_flows-3
 ovs-ofctl -O OpenFlow13 dump-flows br-int > openflow
 
-ovn-nbctl list logical_switch
+ovn-nbctl list logical_router
 #ovn-nbctl --bare --columns _uuid find logical_router_policy priority=2000
 
 
@@ -23165,6 +23165,7 @@ store_ip_multicast_pkt \
 echo "yyyyy"
 ovn-sbctl list IGMP_Group
 echo "xxxx"
+ovn-sbctl list port_binding
 OVS_WAIT_UNTIL(
   [check_packets 'hv1/vif1-tx.pcap expected_routed_sw1' \
                  'hv2/vif3-tx.pcap expected_routed_sw2' \

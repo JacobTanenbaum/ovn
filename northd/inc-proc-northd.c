@@ -356,8 +356,8 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     struct ovsdb_idl_index *sbrec_mcast_group_by_name_dp =
                          mcast_group_index_create(sb->idl);
     struct ovsdb_idl_index *sbrec_igmp_groups_by_address_dp =
-                         //ovsdb_idl_index_create2(sb->idl, &sbrec_igmp_group_col_address, &sbrec_igmp_group_col_datapath);
-                         ovsdb_idl_index_create1(sb->idl, &sbrec_igmp_group_col_datapath);
+                         ovsdb_idl_index_create2(sb->idl, &sbrec_igmp_group_col_address, &sbrec_igmp_group_col_datapath);
+                         //ovsdb_idl_index_create1(sb->idl, &sbrec_igmp_group_col_datapath);
 //        = ovsdb_idl_index_create2(sb->idl, &sbrec_fdb_col_dp_key,
   //                                &sbrec_fdb_col_port_key);
     struct ovsdb_idl_index *sbrec_ip_mcast_by_dp =

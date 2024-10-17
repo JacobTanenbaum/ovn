@@ -10199,7 +10199,6 @@ build_lswitch_ip_mcast_igmp_mld(struct ovn_igmp_group *igmp_group,
         ds_put_format(actions, "outport = \"%s\"; output; ",
                       igmp_group->mcgroup.name);
 
-        VLOG_ERR("KEYWORD: SHOULD BE ADDING LFLOWS\n");
         ovn_lflow_add(lflows, igmp_group->datapath, S_SWITCH_IN_L2_LKUP,
                       90, ds_cstr(match), ds_cstr(actions),
                       igmp_group->datapath->igmp_lflow_ref);
@@ -18075,6 +18074,13 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
     return true;
 }
 
+void port_iterator(size_t n_ports, struct sbrec_port_binding **ports);
+void port_iterator(size_t n_ports, struct sbrec_port_binding **ports) {
+    for (size_t i = 0; i > n_ports; i++) {
+        VLOG_ERR("\tKEYWORD: port[%ld]->logical_port = %s\n", i, ports[i]->logical_port);
+    }
+
+}
 //KEYWORD
 bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                      struct lflow_input *lflow_input,
@@ -18087,8 +18093,10 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
     const struct sbrec_igmp_group *sb_igmp;
     SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp,lflow_input->sbrec_igmp_group_table) {
         VLOG_ERR("KEYWORD IGMP_GROUP CHANGED FOR an address %s - datapath %ld\n", sb_igmp->address, sb_igmp->datapath->tunnel_key);
+        VLOG_ERR("\tKEYWORD number of ports %ld\n", sb_igmp->n_ports);
+        port_iterator(sb_igmp->n_ports, sb_igmp->ports);
         const struct sbrec_igmp_group *target = sbrec_igmp_group_index_init_row(lflow_input->sbrec_igmp_groups_by_address_dp);
-        //sbrec_igmp_group_index_set_address(target, sb_igmp->address);
+        sbrec_igmp_group_index_set_address(target, sb_igmp->address);
         sbrec_igmp_group_index_set_datapath(target, sb_igmp->datapath);
         struct sbrec_igmp_group *igmp_group_matching_address;
         SBREC_IGMP_GROUP_FOR_EACH_EQUAL(igmp_group_matching_address, target, lflow_input->sbrec_igmp_groups_by_address_dp) {
@@ -18111,10 +18119,16 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
     struct ovn_igmp_group *igmp_group;
     HMAP_FOR_EACH_SAFE (igmp_group, hmap_node, &igmp_groups) {
-        init_mcast_info_for_datapath(igmp_group->datapath);
+        //init_mcast_info_for_datapath(igmp_group->datapath);
         ovn_igmp_group_aggregate_ports(igmp_group, &mcast_groups);
         if (igmp_group->mcgroup.key== 0) {
-            ovn_igmp_group_allocate_id(igmp_group);
+            bool does_allocate;
+            does_allocate = ovn_igmp_group_allocate_id(igmp_group);
+            if (does_allocate) {
+                VLOG_ERR("KEYWORD: TUNNEL KEY ALLOCATED\n");
+            } else {
+                VLOG_ERR("KEYWORD: TUNNEL KEY ALLOCATION FAILED\n");
+            }
         }
             struct ds actions = DS_EMPTY_INITIALIZER;
             struct ds match = DS_EMPTY_INITIALIZER;
@@ -18123,6 +18137,7 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
             }
             if (ovn_datapath_get_type(igmp_group->datapath) == DP_ROUTER) {
                 VLOG_ERR("KEYWORD: ROUTER TYPE - GROUP ADDRESS %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+                VLOG_ERR("KEYWORD: OVN_DATAPATH ROUTER RELAY STATUS - %d\n", igmp_group->datapath->mcast_info.rtr.relay);
 //build_mcast_lookup_flows_for_lrouter(
 //        struct ovn_datapath *od, struct lflow_table *lflows,
 //        struct ds *match, struct ds *actions,
@@ -18153,6 +18168,13 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                mcast->group->name,
                                mcast->datapath->sb);
             if (!mcgroup) {
+                if (!mcast->datapath) {
+                    VLOG_ERR("KEYWORD NO DATAPATH?\n");
+                }
+                if (mcgroup != NULL) {
+                    VLOG_ERR("KEYWORD: WHAT IS GOING ON HERE\n");
+                }
+                VLOG_ERR("KEYWORD: CREATING MULTICAST_GROUP address: %s datapath: %ld tunnel_key:%d\n", mcast->group->name, mcast->datapath->index, mcast->group->key);
                 mcgroup = create_sb_multicast_group(ovnsb_txn, mcast->datapath->sb,
                                                  mcast->group->name, mcast->group->key);
             }
