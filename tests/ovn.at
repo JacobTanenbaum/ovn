@@ -23241,6 +23241,7 @@ store_ip_multicast_pkt \
 # Check that IGMP join is flooded on sw1-p21
 # Check that traffic is routed by rtr to rtr-sw2 and then switched to sw2-p1
 ovn-sbctl -f csv --columns=datapath,name,ports,tunnel_key list Multicast_Group > mcgroups4
+ovn-sbctl dump-flows > sbflows
 AT_CAPTURE_FILE([expected])
 AT_CAPTURE_FILE([received])
 OVS_WAIT_UNTIL(
