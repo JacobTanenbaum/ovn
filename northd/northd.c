@@ -18076,7 +18076,7 @@ lflow_handle_ls_stateful_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
 void port_iterator(size_t n_ports, struct sbrec_port_binding **ports);
 void port_iterator(size_t n_ports, struct sbrec_port_binding **ports) {
-    for (size_t i = 0; i > n_ports; i++) {
+    for (size_t i = 0; i < n_ports; i++) {
         VLOG_ERR("\tKEYWORD: port[%ld]->logical_port = %s\n", i, ports[i]->logical_port);
     }
 
@@ -18175,6 +18175,7 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
                     VLOG_ERR("KEYWORD: WHAT IS GOING ON HERE\n");
                 }
                 VLOG_ERR("KEYWORD: CREATING MULTICAST_GROUP address: %s datapath: %ld tunnel_key:%d\n", mcast->group->name, mcast->datapath->index, mcast->group->key);
+
                 mcgroup = create_sb_multicast_group(ovnsb_txn, mcast->datapath->sb,
                                                  mcast->group->name, mcast->group->key);
             }
@@ -19378,7 +19379,19 @@ static void my_igmp_group_thing(const struct sbrec_igmp_group *sb_igmp, const st
         if (ovs_list_is_empty(&od->mcast_info.groups)) {
             return;
        }
+        //struct ovn_datapath *td;
+        //HMAP_FOR_EACH(td, key_node, &ls_datapaths->datapaths) {
+        //    VLOG_ERR("\tKEYWORD:1 n_router_ports = %ld\n", td->n_router_ports);
+        //    for (size_t i = 0; i < td->n_router_ports; i++){
+        //        if (ovs_list_is_empty(&td->mcast_info.groups)) {
+        //            VLOG_ERR("\t\tKEYWORD: mcast_info.groups is emptry\n");
+        //        }
+        //        VLOG_ERR("\t\tKEYWORD: port: %s\n", td->router_ports[i]->key);
+        //    }
+        //}
 
+        HMAP_FOR_EACH(od, key_node, &ls_datapaths->datapaths) {
+        VLOG_ERR("KEYWORD:1 n_router_ports = %ld\n", od->n_router_ports);
         for (size_t i = 0; i < od->n_router_ports; i++) {
             struct ovn_port *router_port = od->router_ports[i]->peer;
 
@@ -19424,5 +19437,6 @@ static void my_igmp_group_thing(const struct sbrec_igmp_group *sb_igmp, const st
                                        : router_port;
                 ovn_igmp_group_add_entry(igmp_group_rtr, router_igmp_ports, 1);
             }
+        }
         }
 }
