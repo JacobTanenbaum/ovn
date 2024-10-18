@@ -18081,7 +18081,7 @@ void port_iterator(size_t n_ports, struct sbrec_port_binding **ports);
 void port_iterator(size_t n_ports, struct sbrec_port_binding **ports) {
     for (size_t i = 0; i < n_ports; i++) {
         VLOG_ERR("\tKEYWORD: port[%ld]->logical_port = %s\n", i, ports[i]->logical_port);
-    }
+        }
 
 }
 //KEYWORD
@@ -18096,9 +18096,7 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
     const struct sbrec_igmp_group *sb_igmp;
     SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp,lflow_input->sbrec_igmp_group_table) {
         VLOG_ERR("KEYWORD IGMP_GROUP CHANGED FOR an address %s - datapath %ld\n", sb_igmp->address, sb_igmp->datapath->tunnel_key);
-//            char *dns_id = xasprintf(
-//                UUID_FMT, UUID_ARGS(&dns_info->nb_dns->header_.uuid));
-//
+
         VLOG_ERR("KEYWORD IGMP_GROUP DATAPATH UUID = %s", xasprintf(UUID_FMT, UUID_ARGS(&sb_igmp->datapath->header_.uuid)));
         const struct sbrec_igmp_group *target = sbrec_igmp_group_index_init_row(lflow_input->sbrec_igmp_groups_by_address_dp);
         sbrec_igmp_group_index_set_address(target, sb_igmp->address);
@@ -18127,7 +18125,33 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
     }
     if (ovn_datapath_get_type(od) == DP_SWITCH) {
+//port_iterator(sb_igmp->n_ports, sb_igmp->ports);
+for (size_t i = 0; i < sb_igmp->n_ports; i++) {
+        VLOG_ERR("KEYWORD: THIS PORT - %s\n", sb_igmp->ports[i]-> logical_port);
+        VLOG_ERR("KEYWORD: mcast_flood: %d\n", smap_get_bool(&sb_igmp->ports[i]->options,"mcast_flood", false));
+        struct ovn_port *port =
+            ovn_port_find(lflow_input->ls_ports, sb_igmp->ports[i]->logical_port);
+            VLOG_ERR("KEYWORD: OVN_PORT: %s\n", port->key);
+            VLOG_ERR("KEYWORD: MCAST_FLOOD - %d\n",  smap_get_bool(&port->nbsp->options, "mcast_flood", false));
+            if (port->mcast_info.flood) {
+                VLOG_ERR("KEYWORD: I KNEW IT\n");
+                port->od->mcast_info.rtr.flood_static=true;
+            }
+}
                 VLOG_ERR("KEYWORD: 0 MY start build_lswitch_destination_lookup_bmcast()\n");
+struct mcast_switch_info *mcast_sw_info = &od->mcast_info.sw;
+if (!mcast_sw_info->flood_unregistered) {
+    VLOG_ERR("\tKEYWORD: mcast_sw_info->flood_unregistered\n");
+    if (mcast_sw_info->flood_static) {
+        VLOG_ERR("\t\tKEYWORD: mcast_sw_info->flood_static\n");
+    } else {
+        VLOG_ERR("\t\tKEYWORD: !mcast_sw_info->flood_static\n");
+//        VLOG_ERR("\t\tKEYWORD: GOTCHA %d\n", smap_get_bool(&od->nbs->other_config, "
+    }
+
+} else {
+    VLOG_ERR("\tKEYWORD: !mcast_sw_info->flood_unregistered\n");
+}
             struct ds actions = DS_EMPTY_INITIALIZER;
                 build_lswitch_destination_lookup_bmcast(od, lflows, &actions, lflow_input->meter_groups, NULL);
                 VLOG_ERR("KEYWORD: 0 MY end build_lswitch_destination_lookup_bmcast()\n");
