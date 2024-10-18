@@ -10032,6 +10032,7 @@ build_lswitch_destination_lookup_bmcast(struct ovn_datapath *od,
                                         const struct shash *meter_groups,
                                         struct lflow_ref *lflow_ref)
 {
+    VLOG_ERR("\tKEYWORD: IN build_lswitch_destination_lookup_bmcast()\n");
     ovs_assert(od->nbs);
 
     ovn_lflow_metered(lflows, od, S_SWITCH_IN_L2_LKUP, 110,
@@ -10092,6 +10093,7 @@ build_lswitch_destination_lookup_bmcast(struct ovn_datapath *od,
             }
 
             if (mcast_sw_info->flood_static) {
+                VLOG_ERR("KEYWORD: IN MC_STATIC\n");
                 ds_put_cstr(actions, "outport =\""MC_STATIC"\"; output;");
             }
 
@@ -10106,6 +10108,7 @@ build_lswitch_destination_lookup_bmcast(struct ovn_datapath *od,
             ovn_lflow_add(lflows, od, S_SWITCH_IN_L2_LKUP, 80,
                           "ip4.mcast || ip6.mcast",
                           ds_cstr(actions), lflow_ref);
+            VLOG_ERR("KEYWORD: IS THIS THE ACTION I NEED (%s)\n", ds_cstr(actions));
         }
     }
 
@@ -17025,7 +17028,7 @@ build_lswitch_and_lrouter_iterate_by_ls(struct ovn_datapath *od,
                                           NULL);
     build_lswitch_dhcp_and_dns_defaults(od, lsi->lflows, NULL);
     build_lswitch_destination_lookup_bmcast(od, lsi->lflows, &lsi->actions,
-                                            lsi->meter_groups, NULL);
+                                            lsi->meter_groups, od->igmp_lflow_ref);
     build_lswitch_output_port_sec_od(od, lsi->lflows, NULL);
     build_lswitch_lb_affinity_default_flows(od, lsi->lflows, NULL);
     build_lswitch_lflows_l2_unknown(od, lsi->lflows, NULL);
@@ -18093,13 +18096,16 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
     const struct sbrec_igmp_group *sb_igmp;
     SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp,lflow_input->sbrec_igmp_group_table) {
         VLOG_ERR("KEYWORD IGMP_GROUP CHANGED FOR an address %s - datapath %ld\n", sb_igmp->address, sb_igmp->datapath->tunnel_key);
-        VLOG_ERR("\tKEYWORD number of ports %ld\n", sb_igmp->n_ports);
-        port_iterator(sb_igmp->n_ports, sb_igmp->ports);
+//            char *dns_id = xasprintf(
+//                UUID_FMT, UUID_ARGS(&dns_info->nb_dns->header_.uuid));
+//
+        VLOG_ERR("KEYWORD IGMP_GROUP DATAPATH UUID = %s", xasprintf(UUID_FMT, UUID_ARGS(&sb_igmp->datapath->header_.uuid)));
         const struct sbrec_igmp_group *target = sbrec_igmp_group_index_init_row(lflow_input->sbrec_igmp_groups_by_address_dp);
         sbrec_igmp_group_index_set_address(target, sb_igmp->address);
         sbrec_igmp_group_index_set_datapath(target, sb_igmp->datapath);
         struct sbrec_igmp_group *igmp_group_matching_address;
         SBREC_IGMP_GROUP_FOR_EACH_EQUAL(igmp_group_matching_address, target, lflow_input->sbrec_igmp_groups_by_address_dp) {
+
             VLOG_ERR("KEYWORD: PRINTING OUT %s\n", igmp_group_matching_address->address);
             if (!sbrec_igmp_group_is_deleted(igmp_group_matching_address)) {
                 my_igmp_group_thing(igmp_group_matching_address, lflow_input->ls_datapaths, lflow_input->sbrec_mcast_group_by_name_dp, &igmp_groups, lflow_input->ls_ports);
@@ -18107,18 +18113,32 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
                 VLOG_ERR("KEYWORD: DELETING A THING FOR ADDRESS %s\n",igmp_group_matching_address->address);
             }
         }
-        // clear lflows for this datapath
+        VLOG_ERR("KEYWORD: ***** size of igmp_groups = %ld\n", hmap_count(&igmp_groups));
         struct ovn_datapath *od = ovn_datapath_from_sbrec(
             &lflow_input->ls_datapaths->datapaths,
             &lflow_input->lr_datapaths->datapaths,
             sb_igmp->datapath);
+
+        if (hmap_count(&igmp_groups) > 0 ){
+        // clear lflows for this datapath
         lflow_ref_unlink_lflows(od->igmp_lflow_ref);
+        VLOG_ERR("KEYWORD: CLEAR LFLOWS\n");
 
 
     }
+    if (ovn_datapath_get_type(od) == DP_SWITCH) {
+                VLOG_ERR("KEYWORD: 0 MY start build_lswitch_destination_lookup_bmcast()\n");
+            struct ds actions = DS_EMPTY_INITIALIZER;
+                build_lswitch_destination_lookup_bmcast(od, lflows, &actions, lflow_input->meter_groups, NULL);
+                VLOG_ERR("KEYWORD: 0 MY end build_lswitch_destination_lookup_bmcast()\n");
+
+    }
+    }
+
 
     struct ovn_igmp_group *igmp_group;
     HMAP_FOR_EACH_SAFE (igmp_group, hmap_node, &igmp_groups) {
+        VLOG_ERR("KEYWORD: IGMP_GROUP ADDRESS %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
         //init_mcast_info_for_datapath(igmp_group->datapath);
         ovn_igmp_group_aggregate_ports(igmp_group, &mcast_groups);
         if (igmp_group->mcgroup.key== 0) {
@@ -18143,6 +18163,16 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
 //        struct ds *match, struct ds *actions,
 //        struct lflow_ref *lflow_ref)
                 build_mcast_lookup_flows_for_lrouter(igmp_group->datapath, lflows, &match, &actions, igmp_group->datapath->igmp_lflow_ref);
+//build_lswitch_destination_lookup_bmcast(struct ovn_datapath *od,
+  //                                      struct lflow_table *lflows,
+    //                                    struct ds *actions,
+      //                                  const struct shash *meter_groups,
+        //                                struct lflow_ref *lflow_ref)
+
+            } else {
+                VLOG_ERR("KEYWORD: MY start build_lswitch_destination_lookup_bmcast()\n");
+                build_lswitch_destination_lookup_bmcast(igmp_group->datapath, lflows, &actions, lflow_input->meter_groups, igmp_group->datapath->igmp_lflow_ref);
+                VLOG_ERR("KEYWORD: MY end build_lswitch_destination_lookup_bmcast()\n");
 
             }
             build_lswitch_ip_mcast_igmp_mld(igmp_group, lflows, &actions, &match);
@@ -19363,6 +19393,7 @@ static void my_igmp_group_thing(const struct sbrec_igmp_group *sb_igmp, const st
          * mcast_flood=true and then we can skip the group completely.
          */
         if (!igmp_ports) {
+            VLOG_ERR("GET HERE?\n");
             return;
         }
 
