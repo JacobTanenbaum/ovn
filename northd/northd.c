@@ -5525,6 +5525,7 @@ ovn_igmp_group_get_ports(const struct sbrec_igmp_group *sb_igmp_group,
 
         /* If this is already a flood port skip it for the group. */
         if (port->mcast_info.flood) {
+            VLOG_ERR("KEYWORD port->mcast_info.flood for port %s\n", port->key);
             continue;
         }
 
@@ -5533,6 +5534,7 @@ ovn_igmp_group_get_ports(const struct sbrec_igmp_group *sb_igmp_group,
          */
         if (port->peer && port->peer->od &&
                 port->peer->od->mcast_info.rtr.relay) {
+            VLOG_ERR("KEYWORD relay thing %s\n", port->key);
             continue;
         }
 
@@ -18089,10 +18091,39 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
                                      struct lflow_input *lflow_input,
                                      struct lflow_table *lflows)
 {
+
+    struct ovn_port *test;
+    HMAP_FOR_EACH (test, key_node, lflow_input->lr_ports) {
+       VLOG_ERR("KEYWORD: lr-port = %s DATAPATH- %ld\n", test->key, test->od->index);
+        if (lrport_is_enabled(test->nbrp)) {
+            /* If this port is configured to always flood multicast traffic
+             * add it to the MC_STATIC group.
+             */
+            if (test->mcast_info.flood) {
+                VLOG_ERR("\tKEYWORD: FLOOD");
+                test->od->mcast_info.rtr.flood_static=true;
+            }
+        }
+    }
+
+
+
     struct hmap igmp_groups = HMAP_INITIALIZER(&igmp_groups);
     struct hmap mcast_groups = HMAP_INITIALIZER(&mcast_groups);
 
 
+
+    HMAP_FOR_EACH (test, key_node, lflow_input->lr_ports) {
+        if (lrport_is_enabled(test->nbrp)) {
+            /* If this port is configured to always flood multicast traffic
+             * add it to the MC_STATIC group.
+             */
+            if (test->mcast_info.flood) {
+                ovn_multicast_add(&mcast_groups, &mc_static, test);
+                test->od->mcast_info.rtr.flood_static = true;
+            }
+        }
+    }
     const struct sbrec_igmp_group *sb_igmp;
     SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp,lflow_input->sbrec_igmp_group_table) {
         VLOG_ERR("KEYWORD IGMP_GROUP CHANGED FOR an address %s - datapath %ld\n", sb_igmp->address, sb_igmp->datapath->tunnel_key);
@@ -18117,6 +18148,9 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
             &lflow_input->lr_datapaths->datapaths,
             sb_igmp->datapath);
 
+//for (size_t i = 0; i > od->n_ls_peers; i++) {
+//    VLOG_ERR("KEYWORD: switchport-peer[%ld] = %s\n", i, od->ls_peers[i]->key);
+//}
         if (hmap_count(&igmp_groups) > 0 ){
         // clear lflows for this datapath
         lflow_ref_unlink_lflows(od->igmp_lflow_ref);
@@ -18124,13 +18158,13 @@ bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
 
 
     }
-    if (ovn_datapath_get_type(od) == DP_SWITCH) {
+    if (ovn_datapath_get_type(od) == DP_ROUTER) {
 //port_iterator(sb_igmp->n_ports, sb_igmp->ports);
 for (size_t i = 0; i < sb_igmp->n_ports; i++) {
         VLOG_ERR("KEYWORD: THIS PORT - %s\n", sb_igmp->ports[i]-> logical_port);
         VLOG_ERR("KEYWORD: mcast_flood: %d\n", smap_get_bool(&sb_igmp->ports[i]->options,"mcast_flood", false));
         struct ovn_port *port =
-            ovn_port_find(lflow_input->ls_ports, sb_igmp->ports[i]->logical_port);
+            ovn_port_find(lflow_input->lr_ports, sb_igmp->ports[i]->logical_port);
             VLOG_ERR("KEYWORD: OVN_PORT: %s\n", port->key);
             VLOG_ERR("KEYWORD: MCAST_FLOOD - %d\n",  smap_get_bool(&port->nbsp->options, "mcast_flood", false));
             if (port->mcast_info.flood) {
@@ -18152,9 +18186,9 @@ if (!mcast_sw_info->flood_unregistered) {
 } else {
     VLOG_ERR("\tKEYWORD: !mcast_sw_info->flood_unregistered\n");
 }
-            struct ds actions = DS_EMPTY_INITIALIZER;
-                build_lswitch_destination_lookup_bmcast(od, lflows, &actions, lflow_input->meter_groups, NULL);
-                VLOG_ERR("KEYWORD: 0 MY end build_lswitch_destination_lookup_bmcast()\n");
+            //struct ds actions = DS_EMPTY_INITIALIZER;
+              //  build_lswitch_destination_lookup_bmcast(od, lflows, &actions, lflow_input->meter_groups, od->igmp_lflow_ref);
+    //            VLOG_ERR("KEYWORD: 0 MY end build_lswitch_destination_lookup_bmcast()\n");
 
     }
     }
@@ -18178,9 +18212,11 @@ if (!mcast_sw_info->flood_unregistered) {
             struct ds match = DS_EMPTY_INITIALIZER;
             if (ovn_datapath_get_type(igmp_group->datapath) == DP_SWITCH) {
                 VLOG_ERR("KEYWORD: SWITCH TYPE - GROUP ADDRESS %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+                VLOG_ERR("KEYWORD: SWITCH TYPE - index %ld - UUID %s\n", igmp_group->datapath->index, xasprintf(UUID_FMT, UUID_ARGS(&igmp_group->datapath->key)));
             }
             if (ovn_datapath_get_type(igmp_group->datapath) == DP_ROUTER) {
                 VLOG_ERR("KEYWORD: ROUTER TYPE - GROUP ADDRESS %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+                VLOG_ERR("KEYWORD: ROUTER TYPE - index %ld - UUID %s\n", igmp_group->datapath->index, xasprintf(UUID_FMT, UUID_ARGS(&igmp_group->datapath->key)));
                 VLOG_ERR("KEYWORD: OVN_DATAPATH ROUTER RELAY STATUS - %d\n", igmp_group->datapath->mcast_info.rtr.relay);
 //build_mcast_lookup_flows_for_lrouter(
 //        struct ovn_datapath *od, struct lflow_table *lflows,
