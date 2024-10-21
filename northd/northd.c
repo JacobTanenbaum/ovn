@@ -18186,8 +18186,8 @@ if (!mcast_sw_info->flood_unregistered) {
 } else {
     VLOG_ERR("\tKEYWORD: !mcast_sw_info->flood_unregistered\n");
 }
-            //struct ds actions = DS_EMPTY_INITIALIZER;
-              //  build_lswitch_destination_lookup_bmcast(od, lflows, &actions, lflow_input->meter_groups, od->igmp_lflow_ref);
+            struct ds actions = DS_EMPTY_INITIALIZER;
+                build_lswitch_destination_lookup_bmcast(od, lflows, &actions, lflow_input->meter_groups, NULL);
     //            VLOG_ERR("KEYWORD: 0 MY end build_lswitch_destination_lookup_bmcast()\n");
 
     }
