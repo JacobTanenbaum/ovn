@@ -462,6 +462,7 @@ ovn_datapath_create(struct hmap *datapaths, const struct uuid *key,
     od->lr_group = NULL;
     hmap_init(&od->ports);
     sset_init(&od->router_ips);
+    od->igmp_lflow_ref = lflow_ref_create();
     return od;
 }
 
@@ -5511,27 +5512,41 @@ static struct ovn_port **
 ovn_igmp_group_get_ports(const struct sbrec_igmp_group *sb_igmp_group,
                          size_t *n_ports, const struct hmap *ls_ports)
 {
+//    VLOG_ERR("KEYWORD: GETTING ports for IGMP_GROUP %s\n", sb_igmp_group->address);
     struct ovn_port **ports = NULL;
 
+//    VLOG_ERR("\tKEYWORD: Number of ports %ld\n", sb_igmp_group->n_ports);;
      *n_ports = 0;
      for (size_t i = 0; i < sb_igmp_group->n_ports; i++) {
         struct ovn_port *port =
             ovn_port_find(ls_ports, sb_igmp_group->ports[i]->logical_port);
 
         if (!port || !port->nbsp) {
+//            VLOG_ERR("\tKEYWORD: NOT PORT\n");
             continue;
         }
 
         /* If this is already a flood port skip it for the group. */
         if (port->mcast_info.flood) {
+//            VLOG_ERR("\tKEYWORD SKIP FLOOD %s\n", port->sb->logical_port);
             continue;
         }
 
         /* If this is already a port of a router on which relay is enabled,
          * skip it for the group. Traffic is flooded there anyway.
          */
+        if (port->peer) {
+//            VLOG_ERR("WHAT IS THIS: %d\n", port->peer);
+            if (port->peer->od) {
+//                VLOG_ERR("WHAT IS THIS: %d\n", port->peer->od);
+                if (port->peer->od->mcast_info.rtr.relay) {
+//                    VLOG_ERR("WHAT IS THIS: %d\n", port->peer->od->mcast_info.rtr.relay);
+                }
+            }
+        }
         if (port->peer && port->peer->od &&
                 port->peer->od->mcast_info.rtr.relay) {
+//            VLOG_ERR("\tKEYWORD SKIP RELAY\n");
             continue;
         }
 
@@ -10199,7 +10214,7 @@ build_lswitch_ip_mcast_igmp_mld(struct ovn_igmp_group *igmp_group,
                       igmp_group->mcgroup.name);
 
         ovn_lflow_add(lflows, igmp_group->datapath, S_SWITCH_IN_L2_LKUP,
-                      90, ds_cstr(match), ds_cstr(actions), NULL);
+                      90, ds_cstr(match), ds_cstr(actions), igmp_group->datapath->igmp_lflow_ref);
     }
 }
 
@@ -13581,6 +13596,7 @@ build_mcast_lookup_flows_for_lrouter(
         struct ds *match, struct ds *actions,
         struct lflow_ref *lflow_ref)
 {
+
     ovs_assert(od->nbr);
 
     /* Drop IPv6 multicast traffic that shouldn't be forwarded,
@@ -13594,8 +13610,10 @@ build_mcast_lookup_flows_for_lrouter(
     }
 
     struct ovn_igmp_group *igmp_group;
+    VLOG_ERR("KEYWORD: DO I GET HERE\n");
 
     LIST_FOR_EACH (igmp_group, list_node, &od->mcast_info.groups) {
+        VLOG_ERR("router thing for multicast_group: %s\n", igmp_group->mcgroup.name);
         ds_clear(match);
         ds_clear(actions);
         if (IN6_IS_ADDR_V4MAPPED(&igmp_group->address)) {
@@ -13617,7 +13635,7 @@ build_mcast_lookup_flows_for_lrouter(
                       igmp_group->mcgroup.name);
         ovn_lflow_add(lflows, od, S_ROUTER_IN_IP_ROUTING, 10500,
                       ds_cstr(match), ds_cstr(actions),
-                      lflow_ref);
+                      od->igmp_lflow_ref);
     }
 
     /* If needed, flood unregistered multicast on statically configured
@@ -17642,7 +17660,7 @@ void build_lflows(struct ovsdb_idl_txn *ovnsb_txn,
     /* Parallel build may result in a suboptimal hash. Resize the
      * lflow map to a correct size before doing lookups */
     lflow_table_expand(lflows);
-    
+
     stopwatch_start(LFLOWS_TO_SB_STOPWATCH_NAME, time_msec());
     lflow_table_sync_to_sb(lflows, ovnsb_txn, input_data->ls_datapaths,
                            input_data->lr_datapaths,
@@ -17725,6 +17743,7 @@ lflow_reset_northd_refs(struct lflow_input *lflow_input)
     HMAP_FOR_EACH (op, key_node, lflow_input->lr_ports) {
         lflow_ref_clear(op->lflow_ref);
         lflow_ref_clear(op->stateful_lflow_ref);
+        lflow_ref_clear(op->lflow_ref);
     }
 
     HMAP_FOR_EACH (lb_dps, hmap_node, lflow_input->lb_datapaths_map) {
@@ -18424,7 +18443,9 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
         /* If this is a stale group (e.g., controller had crashed,
          * purge it).
          */
+//        VLOG_ERR("KEYWORD: DOING STUFF FOR %s\n", sb_igmp->address);
         if (!sb_igmp->chassis || !sb_igmp->datapath) {
+//            VLOG_ERR("\tKEYWORD: GRUMBLE\n");
             sbrec_igmp_group_delete(sb_igmp);
             continue;
         }
@@ -18434,6 +18455,13 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
                                      sb_igmp->datapath);
 
         if (!od || ovn_datapath_is_stale(od)) {
+//            VLOG_ERR("\tKEYWORD: DATAPATH_STALE\n");
+//            if (!od->nbr) {
+//                VLOG_ERR("\tKEYWORD !od->nbr\n");
+//            }
+//            if (!od->nbs) {
+//                VLOG_ERR("\tKEYWORD !od->nbs\n");
+//            }
             sbrec_igmp_group_delete(sb_igmp);
             continue;
         }
@@ -18449,15 +18477,19 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
             continue;
         }
 
+
         /* Extract the IGMP group ports from the SB entry. */
+//        VLOG_ERR("KEYWORD GETTING IGMP_PORTS for: %s\n", sb_igmp->address);
         size_t n_igmp_ports;
         struct ovn_port **igmp_ports =
             ovn_igmp_group_get_ports(sb_igmp, &n_igmp_ports, ls_ports);
+//        VLOG_ERR("KEYWORD: FINISHED GETTING IGMP_PORTS FOR %s n_ports= %ld\n", sb_igmp->address, n_igmp_ports);
 
         /* It can be that all ports in the IGMP group record already have
          * mcast_flood=true and then we can skip the group completely.
          */
         if (!igmp_ports) {
+            VLOG_ERR("\tKEYWORD: SKIPPING \n");
             continue;
         }
 
@@ -18476,12 +18508,15 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
      * IGMP groups are based on the groups learnt by their multicast enabled
      * peers.
      */
-    HMAP_FOR_EACH (od, key_node, &ls_datapaths->datapaths) {
 
+    HMAP_FOR_EACH (od, key_node, &ls_datapaths->datapaths) {
+//        VLOG_ERR("\tHERE FOR DATAPATH THING - index %ld\n", od->index);
         if (ovs_list_is_empty(&od->mcast_info.groups)) {
+//            VLOG_ERR("\tKEYWORD: n_router_ports = %ld, Continue\n", od->n_router_ports);
             continue;
         }
 
+        VLOG_ERR("\tKEYWORD: n_router_ports = %ld\n", od->n_router_ports);
         for (size_t i = 0; i < od->n_router_ports; i++) {
             struct ovn_port *router_port = od->router_ports[i]->peer;
 
@@ -18489,11 +18524,22 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
              * relay enabled or if it was already configured to flood
              * multicast traffic then skip it.
              */
+//            VLOG_ERR("KEYWORD: HERE FOR PEER: %s\n", router_port->sb->logical_port);
+
             if (!router_port || !router_port->od ||
                     !router_port->od->mcast_info.rtr.relay ||
                     router_port->mcast_info.flood) {
+//                VLOG_ERR("KEYWORD: first continue\n");
+//                VLOG_ERR("KEYWORD: WHYYY %d\n", !router_port);
+//                VLOG_ERR("KEYWORD: WHYYY %d\n", !router_port->od);
+//                VLOG_ERR("KEYWORD: WHYYY %d\n", !router_port->od->mcast_info.rtr.relay);
+//                VLOG_ERR("KEYWORD: WHYYY %d\n", router_port->mcast_info.flood);
                 continue;
             }
+//                VLOG_ERR("KEYWORD: HUH %d\n", !router_port);
+//                VLOG_ERR("KEYWORD: HUH %d\n", !router_port->od);
+//                VLOG_ERR("KEYWORD: HUH %d\n", !router_port->od->mcast_info.rtr.relay);
+//                VLOG_ERR("KEYWORD: HUH %d\n", router_port->mcast_info.flood);
 
             struct ovn_igmp_group *igmp_group;
             LIST_FOR_EACH (igmp_group, list_node, &od->mcast_info.groups) {
@@ -18502,6 +18548,7 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
                 /* Skip mrouter entries. */
                 if (!strcmp(igmp_group->mcgroup.name,
                             OVN_IGMP_GROUP_MROUTERS)) {
+//                VLOG_ERR("KEYWORD: second continue\n");
                     continue;
                 }
 
@@ -18510,9 +18557,12 @@ build_mcast_groups(const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
                  */
                 if (!IN6_IS_ADDR_V4MAPPED(address) &&
                         !ipv6_addr_is_routable_multicast(address)) {
+                VLOG_ERR("KEYWORD: thirdcontinue\n");
                     continue;
                 }
 
+                VLOG_ERR("KEYWORD: IGMP ADDRESS %s\n", xasprintf(IP_FMT,IP_ARGS(in6_addr_get_mapped_ipv4(&igmp_group->address))));
+                VLOG_ERR("KEYWORD: ROUTER_PORT = %s\n", router_port->sb->logical_port);
                 struct ovn_igmp_group *igmp_group_rtr =
                     ovn_igmp_group_add(sbrec_mcast_group_by_name_dp,
                                        igmp_groups, router_port->od,
@@ -19214,4 +19264,50 @@ northd_get_datapath_for_port(const struct hmap *ls_ports,
     const struct ovn_port *op = ovn_port_find(ls_ports, port_name);
 
     return op ? op->od : NULL;
+}
+
+//bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
+//                                      struct lflow_input *lflow_input,
+//                                      struct lflow_table *lflows)
+bool lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn, const struct sbrec_igmp_group_table *sbrec_igmp_group_table_input, struct lflow_input *input_data, struct lflow_table *lflows)
+{
+    VLOG_ERR("KEYWORD: I AM HERE\n");
+    const struct sbrec_igmp_group *sb_igmp;
+    VLOG_ERR("KEYWORD STARTING\n");
+    SBREC_IGMP_GROUP_TABLE_FOR_EACH_TRACKED(sb_igmp, sbrec_igmp_group_table_input) {
+        if (sbrec_igmp_group_is_new(sb_igmp)) {
+            ///...treat as new
+            VLOG_ERR("KEYWORD ENDING RETURN FALSE\n");
+            return false;
+        } else if (sbrec_igmp_group_is_deleted(sb_igmp) && !strcmp(sb_igmp->address, OVN_IGMP_GROUP_MROUTERS)) {
+            const struct sbrec_multicast_group *sbmc =
+                mcast_group_lookup(input_data->sbrec_mcast_group_by_name_dp, sb_igmp->address, sb_igmp->datapath);
+            sbrec_multicast_group_delete(sbmc);
+    struct ovn_datapath *od =  ovn_datapath_from_sbrec(NULL, NULL, sb_igmp->datapath);
+            if (od == NULL){
+                VLOG_ERR("AWW MAN\n");
+            }
+            lflow_ref_unlink_lflows(od->igmp_lflow_ref);
+//            lflow_ref_unlink_lflows(od->igmp_lflow_ref);
+            lflow_ref_sync_lflows(
+                od->igmp_lflow_ref, lflows, ovnsb_txn,
+                input_data->ls_datapaths,
+                input_data->lr_datapaths,
+                input_data->ovn_internal_version_changed,
+                input_data->sbrec_logical_flow_table,
+                input_data->sbrec_logical_dp_group_table);
+
+        }
+//        VLOG_ERR("KEYWORD: IGMP_GROUP with address %s changed \n", sb_igmp->address);
+//        if (sbrec_igmp_group_is_new(sb_igmp)) {
+//            VLOG_ERR("KEYWORD: THIS IS NEW\n");
+//        } else if (sbrec_igmp_group_is_deleted(sb_igmp)) {
+//            VLOG_ERR("KEYWORD: THIS IS DELETED\n");
+//        } else {
+//            VLOG_ERR("KEYWORD: UGH OHH THIS IS UPDATED\n");
+//        }
+        // if deleted remove the ports from the mcast group and remove the mcast_group if applicabliie
+    }
+    VLOG_ERR("KEYWORD ENDING RETURNED TRUE\n");
+    return true;
 }

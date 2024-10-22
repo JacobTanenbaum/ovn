@@ -10923,6 +10923,137 @@ CHECK_NO_CHANGE_AFTER_RECOMPUTE(1)
 AT_CLEANUP
 ])
 
+## MYTEST KEYWORD!!
+OVN_FOR_EACH_NORTHD_NO_HV([
+AT_SETUP([IGMP Group incremental processing])
+ovn_start
+
+
+ovn-nbctl ls-add sw1
+
+ovn-nbctl lsp-add sw1 sw1-p11
+
+ovn-nbctl lr-add rtr
+ovn-nbctl lrp-add rtr rtr-sw1 00:00:00:00:01:00 10.0.0.254/24
+ovn-nbctl lsp-add sw1 sw1-rtr \
+    -- lsp-set-type sw1-rtr router  \
+    -- lsp-set-addresses sw1-rtr 00:00:00:00:01:00 \
+    -- lsp-set-options sw1-rtr router-port=rtr-sw1
+
+net_add n1
+sim_add hv1
+as hv1
+
+check ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.1
+
+
+#sim_add hv2
+#as hv2
+#check ovs-vsctl add-br br-phys
+#ovn_attach n1 br-phys 192.168.0.2
+#check ovs-vsctl -- add-port br-int hv2-vif1 -- \
+#    set interface hv2-vif1 external-ids:iface-id=sw1-p21 \
+
+ovn-sbctl dump-flows > sbflows
+ovn-sbctl list Multicast_Group > mcast_groups
+
+check ovn-nbctl --wait=hv set Logical_Switch sw1 \
+    other_config:mcast_querier="false" \
+    other_config:mcast_snoop="true"
+
+ovn-sbctl dump-flows > sbflows1
+ovn-sbctl list Multicast_Group > mcast_groups1
+
+##ovn-nbctl --wait=hv set Logical_Router rtr options:mcast_relay='true'
+
+ovn-sbctl dump-flows > sbflows2
+ovn-sbctl list Multicast_Group > mcast_groups2
+
+## KEYWORD: DONT THINK I NEED BELOW....
+#check ovs-vsctl -- add-port br-int hv1-vif1 -- \
+#    set interface hv1-vif1 external-ids:iface-id=sw1-p11 \
+
+# For switch it is ls_in_ls_lkup
+#Flows to "route" (statically forward) without decrementing TTL for
+#IGMP and MLD packets.  Also, flows to drop potentially looping IGMP/MLD
+#packets.
+#AT_CHECK([grep -e 'lr_in_ip_routing   ' lrflows | grep -e 'igmp' -e 'mld' | ovn_strip_lflows], [0], [dnl
+#  table=??(lr_in_ip_routing   ), priority=10460, match=(igmp), action=(clone { outport = "_MC_static"; next; };)
+#  table=??(lr_in_ip_routing   ), priority=10460, match=(mldv1 || mldv2), action=(clone { outport = "_MC_static"; next; };)
+#  table=??(lr_in_ip_routing   ), priority=10550, match=(eth.src == 00:00:00:00:00:01 && (mldv1 || mldv2)), action=(drop;)
+#  table=??(lr_in_ip_routing   ), priority=10550, match=(eth.src == 00:00:00:00:00:01 && igmp), action=(drop;)
+#  table=??(lr_in_ip_routing   ), priority=10550, match=(eth.src == 00:00:00:00:00:02 && (mldv1 || mldv2)), action=(drop;)
+#  table=??(lr_in_ip_routing   ), priority=10550, match=(eth.src == 00:00:00:00:00:02 && igmp), action=(drop;)
+#])
+
+#echo "KEYWORD"
+#ovn-sbctl list Datapath_Binding
+#echo "^Datapath_Binding/ V Chassis"
+#echo "^ Chassis/ V Port_Binding"
+#ovn-sbctl list Port_Binding
+#echo "KEYWORD"
+
+
+
+#echo "KEYWORD"
+#ovn-nbctl list Logical_Router
+#echo "iiiii"
+#ovn-sbctl list Chassis
+#echo "****"
+#ovn-sbctl list Datapath_Binding
+#dp=$(fetch_column Datapath_Binding _uuid external_ids:name=lr)
+#echo $dp
+#echo "KEYWORD"
+
+#check ovn-nbctl create IGMP_Group "239.0.1.68"
+#ovn-sbctl create IGMP_GROUP address="239.0.1.68" datapath=$dp HAVE TO ALSO GIVE A CHASSIS
+#fetch_column Chassis _uuid external_ids:name=sw1
+#uuid=$(fetch_column nb:Logical_Switch_Port _uuid name=p1)
+echo "KEYWORD"
+#fetch_column nb:Logical_Switch_Port _uuid name=sw1-p11
+##id=$(fetch_column nb:Logical_Switch_Port _uuid name=p1)
+#echo "-----"
+#ovn-nbctl --bare --columns _uuid find Logical_Switch_Port
+#echo "------"
+#ovn-nbctl --bare --columns _uuid find Logical_Switch_Port name=sw-p11
+#echo "end"
+#ovn-nbctl list Logical_Switch_Port
+echo "KEYWORD"
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+as northd ovn-appctl -t ovn-northd inc-engine/show-stats SB_igmp_group
+as northd ovn-appctl -t ovn-northd inc-engine/show-stats lflow
+
+ovn-sbctl create IGMP_GROUP address=239.0.1.68 datapath=$(fetch_column Datapath_Binding _uuid external_ids:name=sw1) chassis=$(fetch_column Chassis _uuid name=hv1) chassis_name=hv1 ports=$(fetch_column Port_Binding _uuid logical_port=sw1-p11)
+as northd ovn-appctl -t ovn-northd inc-engine/show-stats SB_igmp_group
+check as northd ovn-appctl -t ovn-northd inc-engine/show-stats lflow
+#check_engine_stats lb_data norecompute compute
+ovn-nbctl --wait=hv sync
+echo "KEYWORD"
+echo "V Multicast Groups"
+#ovn-sbctl list IGMP_Group
+ovn-sbctl list Multicast_Group
+echo "V IGMP_GROUPS"
+ovn-sbctl list IGMP_Group
+echo "end KEYWORD"
+#generates the sbflow table=28(ls_in_l2_lkup      ), priority=90   , match=(eth.mcast && ip4 && ip4.dst == 239.0.1.68 ), action=(outport = "239.0.1.68"; output; )
+ovn-sbctl dump-flows > sbflows3
+#ovn-nbctl --wait=hv set Logical_Router rtr options:mcast_relay='true'
+check ovn-nbctl set logical_router rtr \
+    options:mcast_relay="true"
+#ovn-nbctl set Logical_switch_port sw1-p11 options:mcast_flood='true'
+#ovn-nbctl set Logical_switch_port sw1-p11 options:mcast_flood_reports='true'
+#ovn-nbctl set Logical_Router_port rtr-sw1 options:mcast_flood='true'
+##ovn-nbctl set Logical_Router_Port rtr-sw1 options:mcast_flood='true'
+ovn-sbctl dump-flows > sbflows4
+ovn-sbctl create IGMP_GROUP address=239.0.1.69 datapath=$(fetch_column Datapath_Binding _uuid external_ids:name=sw1) chassis=$(fetch_column Chassis _uuid name=hv1) chassis_name=hv1 ports=$(fetch_column Port_Binding _uuid logical_port=sw1-rtr),$(fetch_column Port_Binding _uuid logical_port=sw1-p11)
+ovn-sbctl dump-flows > sbflows5
+ovn-sbctl list Port_Binding
+#ovn-sbctl list IGMP_GROUP
+
+OVN_CLEANUP([hv1])
+AT_CLEANUP
+])
 
 OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([check fip and lb flows])

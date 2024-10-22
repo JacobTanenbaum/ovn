@@ -22890,12 +22890,21 @@ send_igmp_v3_report hv2-vif1 hv2 000000000002 $(ip_to_hex 10 0 0 2) f9f9 \
 # Check that the IGMP Group is learned on both hv.
 wait_row_count IGMP_Group 2 address=239.0.1.68
 wait_row_count IGMP_Group 2 protocol=IGMPv3
+echo "KEYWORD IGMP_GROUP"
+ovn-sbctl list IGMP_Group
+echo "KEYWORD IGMP_GROUP"
 check ovn-nbctl --wait=hv sync
 
 AT_CAPTURE_FILE([sbflows3])
 ovn-sbctl dump-flows > sbflows3
 
 AS_BOX([IGMP traffic test 1])
+echo "KEYWORD"
+ovn-sbctl list Chassis
+echo "******"
+ovn-sbctl list encap
+echo "KEYWORD"
+ovn-sbctl list Port_Binding
 # Send traffic and make sure it gets forwarded only on the two ports that
 # joined.
 > expected
@@ -23082,6 +23091,7 @@ send_igmp_v3_report hv2-vif3 hv2 \
 wait_row_count IGMP_Group 2 address=239.0.1.68
 check ovn-nbctl --wait=hv sync
 
+ovn-sbctl find Port_Binding logical_port=rtr-sw1
 AS_BOX([IGMP traffic test 6])
 # Send traffic from sw3 and make sure it is relayed by rtr.
 # to ports that joined.
@@ -34499,7 +34509,7 @@ check ovs-vsctl add-port br-int ls0-hv -- set Interface ls0-hv external-ids:ifac
 check ovn-nbctl lr-add lr0
 
 check ovn-nbctl ls-add ls0
-check ovn-nbctl lsp-add ls0 ls0-lr0 
+check ovn-nbctl lsp-add ls0 ls0-lr0
 check ovn-nbctl lsp-set-type ls0-lr0 router
 check ovn-nbctl lsp-set-addresses ls0-lr0 router
 check ovn-nbctl lrp-add lr0 lr0-ls0 00:00:00:00:00:01 10.0.0.1

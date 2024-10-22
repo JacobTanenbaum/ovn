@@ -526,3 +526,22 @@ en_bfd_sync_cleanup(void *data)
 {
     bfd_sync_destroy(data);
 }
+
+/*
+bool
+igmp_group_change_handler(struct engine_node *node, void *data) {
+    VLOG_ERR("KEYWORD: I AM HERE\n");
+
+    const struct sbrec_igmp_group_table *igmp_data =
+        EN_OVSDB_GET(engine_get_input("SB_igmp_group", node));
+
+//    struct lflow_data * lflow_data = data;
+//    struct lflow_input lflow_input;
+
+//    lflow_get_input_data(node, &lflow_input);
+
+//    return lflow_handle_igmp_group_changes(eng_ctx->ovnsb_idl_txn, &lflow_input, lflow_data->lflow_table);
+    const struct engine_context *eng_ctx = engine_get_context();
+    return lflow_handle_igmp_group_changes(eng_ctx->ovnsb_idl_txn, igmp_data);
+}
+*/

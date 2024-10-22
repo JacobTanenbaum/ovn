@@ -380,6 +380,7 @@ struct ovn_datapath {
     /* Map of ovn_port objects belonging to this datapath.
      * This map doesn't include derived ports. */
     struct hmap ports;
+    struct lflow_ref *igmp_lflow_ref;
 };
 
 const struct ovn_datapath *ovn_datapath_find(const struct hmap *datapaths,
@@ -860,5 +861,12 @@ is_vxlan_mode(const struct smap *nb_options,
               const struct sbrec_chassis_table *sbrec_chassis_table);
 
 uint32_t get_ovn_max_dp_key_local(bool _vxlan_mode);
+
+//bool
+//lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn,
+//                                struct lflow_input *lflow_input,
+//                                struct lflow_table *lflows);
+bool
+lflow_handle_igmp_group_changes(struct ovsdb_idl_txn *ovnsb_txn, const struct sbrec_igmp_group_table *sbrec_igmp_group_table_input, struct lflow_input *input_data, struct lflow_table *lflows);
 
 #endif /* NORTHD_H */
