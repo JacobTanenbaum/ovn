@@ -376,6 +376,7 @@ struct ovn_datapath {
     /* The logical router group to which this datapath belongs.
      * Valid only if it is logical router datapath. NULL otherwise. */
     struct lrouter_group *lr_group;
+    struct lflow_ref *igmp_lflow_ref;
 
     /* Map of ovn_port objects belonging to this datapath.
      * This map doesn't include derived ports. */
@@ -861,5 +862,11 @@ is_vxlan_mode(const struct smap *nb_options,
               const struct sbrec_chassis_table *sbrec_chassis_table);
 
 uint32_t get_ovn_max_dp_key_local(bool _vxlan_mode);
+
+bool
+handle_igmp_change(struct ovsdb_idl_txn *ovnsb_txn,
+                   const struct sbrec_igmp_group_table *sbrec_igmp_group_table,
+                   struct lflow_input *input_data,
+                   struct lflow_table *lflows);
 
 #endif /* NORTHD_H */

@@ -233,3 +233,20 @@ void en_lflow_cleanup(void *data_)
     struct lflow_data *data = data_;
     lflow_table_destroy(data->lflow_table);
 }
+
+bool
+igmp_group_change_handler(struct engine_node *node, void *data)
+{
+    const struct sbrec_igmp_group_table *igmp_data =
+        EN_OVSDB_GET(engine_get_input("SB_igmp_group", node));
+
+    const struct engine_context *eng_ctx = engine_get_context();
+    struct lflow_input lflow_input;
+    lflow_get_input_data(node, &lflow_input);
+
+    struct lflow_data *lflow_data = data;
+    return handle_igmp_change(eng_ctx->ovnsb_idl_txn,
+                              igmp_data,
+                              &lflow_input,
+                              lflow_data->lflow_table);
+}

@@ -10938,6 +10938,71 @@ AT_CLEANUP
 ])
 
 OVN_FOR_EACH_NORTHD_NO_HV([
+AT_SETUP([SB IGMP incremental processing])
+
+check_recompute_counter() {
+    lflow_recomp=$(as northd ovn-appctl -t ovn-northd inc-engine/show-stats lflow recompute)
+    AT_CHECK([test x$lflow_recomp = x$1])
+}
+ovn_start
+
+net_add n1
+sim_add hv1
+as hv1
+
+ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.11
+
+sim_add hv2
+as hv2
+
+check ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.2
+
+ovn-nbctl ls-add sw1
+ovn-nbctl ls-add sw2
+
+ovn-nbctl lsp-add sw1 sw1-p11
+
+ovn-nbctl lr-add rtr
+ovn-nbctl lrp-add rtr rtr-sw1 00:00:00:00:01:00 10.0.0.254/24
+
+ovn-nbctl lsp-add sw1 sw1-rtr \
+    -- lsp-set-type sw1-rtr router  \
+    -- lsp-set-addresses sw1-rtr 00:00:00:00:01:00 \
+    -- lsp-set-options sw1-rtr router-port=rtr-sw1
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+#create IGMP_GROUP 239.0.1.68 with port sw1-p11
+ovn-sbctl create IGMP_GROUP address=239.0.1.68 \
+    datapath=$(fetch_column Datapath_Binding _uuid external_ids:name=sw1) \
+    chassis=$(fetch_column Chassis _uuid name=hv1) \
+    chassis_name=hv1 \
+    ports=$(fetch_column Port_Binding _uuid logical_port=sw1-p11)
+
+check ovn-nbctl --wait=sb sync
+#check ovn-nbctl --wait=hv sync
+check_recompute_counter 0
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+ovn-sbctl add igmp_group $(fetch_column IGMP_GROUP _uuid address=239.0.1.68) ports $(fetch_column Port_Binding _uuid logical_port=sw1-p12)
+check ovn-nbctl --wait=sb sync
+check_recompute_counter 0
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+#delete IGMP_GROUP 239.0.1.68
+ovn-sbctl destroy igmp_group $(fetch_column IGMP_GROUP _uuid address=239.0.1.68)
+check ovn-nbctl --wait=sb sync
+check_recompute_counter 0
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+OVN_CLEANUP([hv1], [hv2])
+AT_CLEANUP
+])
+
+OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([ACL/Meter incremental processing - no northd recompute])
 ovn_start
 
