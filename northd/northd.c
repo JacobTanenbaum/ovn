@@ -19453,8 +19453,8 @@ handle_igmp_change(struct ovsdb_idl_txn *ovnsb_txn,
 
     struct ds match = DS_EMPTY_INITIALIZER;
     struct ds actions = DS_EMPTY_INITIALIZER;
-    struct ovn_igmp_group *igmp_group;
 
+    struct ovn_igmp_group *igmp_group;
     HMAP_FOR_EACH_SAFE (igmp_group, hmap_node, &igmp_groups) {
         build_mcast_group_from_igmp_group(igmp_group,
                                           &mcast_groups,
@@ -19509,6 +19509,7 @@ handle_igmp_change(struct ovsdb_idl_txn *ovnsb_txn,
                 uuidset_insert(&datapaths_to_sync, &mc->datapath->key);
             }
         }
+        ovn_multicast_destroy(&mcast_groups, mc);
     }
     struct uuidset_node *uuidnode;
     UUIDSET_FOR_EACH (uuidnode, &datapaths_to_sync) {
@@ -19529,6 +19530,12 @@ handle_igmp_change(struct ovsdb_idl_txn *ovnsb_txn,
             input_data->sbrec_logical_dp_group_table);
     }
 
+    ds_destroy(&match);
+    ds_destroy(&actions);
+
+    HMAP_FOR_EACH_SAFE (igmp_group, hmap_node, &igmp_groups) {
+        ovn_igmp_group_destroy(&igmp_groups, igmp_group);
+    }
     hmap_destroy(&igmp_groups);
     hmap_destroy(&mcast_groups);
     uuidset_destroy(&datapaths_to_sync);

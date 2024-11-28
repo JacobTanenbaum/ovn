@@ -34606,7 +34606,7 @@ check ovs-vsctl add-port br-int ls0-hv -- set Interface ls0-hv external-ids:ifac
 check ovn-nbctl lr-add lr0
 
 check ovn-nbctl ls-add ls0
-check ovn-nbctl lsp-add ls0 ls0-lr0 
+check ovn-nbctl lsp-add ls0 ls0-lr0
 check ovn-nbctl lsp-set-type ls0-lr0 router
 check ovn-nbctl lsp-set-addresses ls0-lr0 router
 check ovn-nbctl lrp-add lr0 lr0-ls0 00:00:00:00:00:01 10.0.0.1
