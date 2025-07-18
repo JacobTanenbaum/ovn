@@ -1893,8 +1893,8 @@ check ovn-nbctl --wait=sb \
 
 check_row_count Datapath_Binding 1
 
-nb_uuid=$(ovn-sbctl get Datapath_Binding . external_ids:logical-router)
-lr_uuid=\"$(ovn-nbctl get Logical_Router . _uuid)\"
+nb_uuid=$(ovn-sbctl get Datapath_Binding . nb_uuid)
+lr_uuid=$(ovn-nbctl get Logical_Router . _uuid)
 echo nb_uuid="$nb_uuid" lr_uuid="$lr_uuid"
 AT_CHECK([test "${nb_uuid}" = "${lr_uuid}"])
 
@@ -7582,7 +7582,7 @@ ls1_uuid=$(fetch_column nb:Logical_Switch _uuid)
 
 # create a duplicated sb datapath (and an IP_Mulicast record that references
 # it) on purpose.
-AT_CHECK([ovn-sbctl --id=@dp create Datapath_Binding external_ids:logical-switch=$ls1_uuid external_ids:name=ls1 tunnel_key=123 -- create IP_Multicast datapath=@dp], [0], [ignore])
+AT_CHECK([ovn-sbctl --id=@dp create Datapath_Binding nb_uuid=$ls1_uuid type=logical-switch external_ids:name=ls1 tunnel_key=123 -- create IP_Multicast datapath=@dp], [0], [ignore])
 
 # northd should delete one of the datapaths in the end
 wait_row_count Datapath_Binding 1

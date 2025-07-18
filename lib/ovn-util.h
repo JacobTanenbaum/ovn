@@ -540,4 +540,12 @@ const struct sbrec_port_binding *lport_lookup_by_name(
 #define _VFUNC(name, n) _VFUNC_(name, n)
 #define VFUNC(func, ...) _VFUNC(func, __NARG__(__VA_ARGS__)) (__VA_ARGS__)
 
+bool datapath_get_nb_uuid_and_type(const struct sbrec_datapath_binding *sb,
+                                   struct uuid *nb_uuid, const char **type);
+
+bool datapath_get_nb_uuid(const struct sbrec_datapath_binding *sb,
+                          struct uuid *nb_uuid);
+
+const char *datapath_get_nb_type(const struct sbrec_datapath_binding *sb);
+
 #endif /* OVN_UTIL_H */

@@ -1484,3 +1484,48 @@ ovn_mirror_port_name(const char *datapath_name,
 {
     return xasprintf("mp-%s-%s", datapath_name, port_name);
 }
+
+bool
+datapath_get_nb_uuid_and_type(const struct sbrec_datapath_binding *sb,
+                              struct uuid *nb_uuid, const char **type)
+{
+    if (sb->nb_uuid) {
+        /* New style. The UUID and type are direct columns, so use those. */
+        *nb_uuid = *sb->nb_uuid;
+        *type = sb->type;
+        return true;
+    }
+
+    /* Old style. The UUID is stored in external_ids, and the key
+     * corresponds to the datapath type. This only works with
+     * logical switches and logical routers.
+     */
+    *type = "logical-switch";
+    if (smap_get_uuid(&sb->external_ids, *type, nb_uuid)) {
+        return true;
+    }
+    *type = "logical-router";
+    if (smap_get_uuid(&sb->external_ids, *type, nb_uuid)) {
+        return true;
+    }
+    *type = "";
+    *nb_uuid = UUID_ZERO;
+    return false;
+}
+
+bool
+datapath_get_nb_uuid(const struct sbrec_datapath_binding *sb,
+                     struct uuid *nb_uuid)
+{
+    const char *type;
+    return datapath_get_nb_uuid_and_type(sb, nb_uuid, &type);
+}
+
+const char *
+datapath_get_nb_type(const struct sbrec_datapath_binding *sb)
+{
+    const char *type;
+    struct uuid nb_uuid;
+    datapath_get_nb_uuid_and_type(sb, &nb_uuid, &type);
+    return type;
+}

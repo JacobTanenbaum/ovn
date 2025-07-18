@@ -382,6 +382,7 @@ pre_get_info(struct ctl_context *ctx)
     ovsdb_idl_add_column(ctx->idl, &sbrec_logical_dp_group_col_datapaths);
 
     ovsdb_idl_add_column(ctx->idl, &sbrec_datapath_binding_col_external_ids);
+    ovsdb_idl_add_column(ctx->idl, &sbrec_datapath_binding_col_nb_uuid);
 
     ovsdb_idl_add_column(ctx->idl, &sbrec_ip_multicast_col_datapath);
     ovsdb_idl_add_column(ctx->idl, &sbrec_ip_multicast_col_seq_no);
@@ -1493,8 +1494,7 @@ static const struct ctl_table_class tables[SBREC_N_TABLES] = {
     [SBREC_TABLE_DATAPATH_BINDING].row_ids
      = {{&sbrec_datapath_binding_col_external_ids, "name", NULL},
         {&sbrec_datapath_binding_col_external_ids, "name2", NULL},
-        {&sbrec_datapath_binding_col_external_ids, "logical-switch", NULL},
-        {&sbrec_datapath_binding_col_external_ids, "logical-router", NULL}},
+        {&sbrec_datapath_binding_col_nb_uuid, NULL, NULL}},
 
     [SBREC_TABLE_PORT_BINDING].row_ids
      = {{&sbrec_port_binding_col_logical_port, NULL, NULL},
