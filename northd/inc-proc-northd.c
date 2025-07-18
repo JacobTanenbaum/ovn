@@ -193,14 +193,6 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
 {
     /* Define relationships between nodes where first argument is dependent
      * on the second argument */
-    engine_add_input(&en_lb_data, &en_nb_load_balancer,
-                     lb_data_load_balancer_handler);
-    engine_add_input(&en_lb_data, &en_nb_load_balancer_group,
-                     lb_data_load_balancer_group_handler);
-    engine_add_input(&en_lb_data, &en_nb_logical_switch,
-                     lb_data_logical_switch_handler);
-    engine_add_input(&en_lb_data, &en_nb_logical_router,
-                     lb_data_logical_router_handler);
 
     engine_add_input(&en_sampling_app, &en_nb_sampling_app, NULL);
 
@@ -238,6 +230,15 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_datapath_synced_logical_switch, &en_datapath_sync,
                      en_datapath_synced_logical_switch_datapath_sync_handler);
 
+    engine_add_input(&en_lb_data, &en_nb_load_balancer,
+                     lb_data_load_balancer_handler);
+    engine_add_input(&en_lb_data, &en_nb_load_balancer_group,
+                     lb_data_load_balancer_group_handler);
+    engine_add_input(&en_lb_data, &en_datapath_synced_logical_switch,
+                     lb_data_synced_logical_switch_handler);
+    engine_add_input(&en_lb_data, &en_datapath_synced_logical_router,
+                     lb_data_synced_logical_router_handler);
+
     engine_add_input(&en_northd, &en_nb_mirror, NULL);
     engine_add_input(&en_northd, &en_nb_mirror_rule, NULL);
     engine_add_input(&en_northd, &en_nb_static_mac_binding, NULL);
@@ -269,30 +270,13 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
 
     engine_add_input(&en_northd, &en_sb_port_binding,
                      northd_sb_port_binding_handler);
-    engine_add_input(&en_northd, &en_nb_logical_switch,
+    engine_add_input(&en_northd, &en_datapath_synced_logical_switch,
                      northd_nb_logical_switch_handler);
-    engine_add_input(&en_northd, &en_nb_logical_router,
+    engine_add_input(&en_northd, &en_datapath_synced_logical_router,
                      northd_nb_logical_router_handler);
     engine_add_input(&en_northd, &en_lb_data, northd_lb_data_handler);
     engine_add_input(&en_northd, &en_nb_port_group,
                      northd_nb_port_group_handler);
-
-    /* Currently, northd handles logical router and switch changes in nodes
-     * that read directly from the northbound logical tables. Those nodes
-     * will trigger a recompute if conditions on changed logical routers
-     * or logical switches cannot be handled. From en-northd's perspective,
-     * synced logical switch and router changes are always handled.
-     *
-     * Once datapath syncing has incremental processing added, then
-     * en-northd can move its logical router and switch change handling to
-     * handlers defined here, and there will be no need for en_northd to
-     * read directly from the northbound database for incremental handling
-     * of these types.
-     */
-    engine_add_input(&en_northd, &en_datapath_synced_logical_router,
-                     engine_noop_handler);
-    engine_add_input(&en_northd, &en_datapath_synced_logical_switch,
-                     engine_noop_handler);
 
     engine_add_input(&en_lr_nat, &en_northd, lr_nat_northd_handler);
 
