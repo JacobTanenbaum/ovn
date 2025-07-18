@@ -36,6 +36,39 @@
  * version (e.g. ovn_synced_logical_router). Later nodes can then consume
  * these type-specific synced datapath types in order to perform
  * further processing.
+ *
+ * Incremental processing throws an interesting wrinkle to the mix.
+ * When northbound logical datapaths are new, the datapath_sync node
+ * inserts a new Datapath_Binding into the southbound database. The
+ * new synced datapath is added to a "pending" hmap of synced datapaths.
+ * Once the southbound database sends its update showing the inserted
+ * Datapath_Binding, then the synced datapath is moved from the "pending"
+ * hmap to the "synced_dps" hmap. The engine nodes that process synced
+ * datapaths only pay attention to the synced datapaths in the "synced_dps"
+ * hmap. This means that consumers of synced logical switches or synced
+ * logical routers will be informed of "new" synced datapaths after the
+ * northbound IDL has reported the logical router or logical switch as
+ * new. This means that the nbrec_logical_switch_is_new() and
+ * nbrec_logical_router_is_new() functions cannot be used to detect if
+ * a logical switch or logical router is new. Instead, consumers of
+ * synced datapath types can tell if the datapath is new by its
+ * presence in the "new" hmapx of the synced logical datapath map.
+ *
+ * The reason this is done is to ensure that valid southbound
+ * datapath binding pointers are provided to all engine nodes. If we
+ * provided the southbound datapath binding at the time of insertion,
+ * then the pointer would go out of scope when the IDL is run next. By
+ * waiting for an updated from the southbound database, we get a more
+ * permanent pointer to the southbound datapath binding that is safe
+ * to cache.
+ *
+ * For updated or deleted northbound logical datapaths, there is no
+ * such delay. The update or deletion is passed to downstream engine
+ * nodes in the same IDL run when they are detected as being updated
+ * or deleted in the northbound database. Therefore, the
+ * nbrec_logical_switch_is_deleted() and nbrec_logical_router_is_deleted()
+ * functions are still valid to call from consumers of synced datapath
+ * engine nodes.
  */
 
 enum ovn_datapath_type {
@@ -74,10 +107,14 @@ struct ovn_synced_datapath {
     struct hmap_node hmap_node;
     const struct ovsdb_idl_row *nb_row;
     const struct sbrec_datapath_binding *sb_dp;
+    /* SB datapath_binding must be refreshed with stable
+     * pointer to DB row. */
+    bool update_sb_dp;
 };
 
 struct ovn_synced_datapaths {
     struct hmap synced_dps;
+    struct hmap pending_dps;
     struct hmap dp_tnlids;
 
     struct hmapx new;

@@ -17446,9 +17446,9 @@ check ovn-nbctl --wait=sb sync
 > northd/ovn-northd.log
 check as northd ovn-appctl -t ovn-northd vlog/set jsonrpc:dbg
 check as northd ovn-appctl -t ovn-northd vlog/set inc_proc_eng:dbg
-# Any change that invoke engine processing, for example add logical switch.
+# Any change that invoke engine processing, for example add address set.
 # nb_cfg bump must be present in order to get feedback as sb_cfg.
-check ovn-nbctl --wait=sb ls-add sw1
+check ovn-nbctl --wait=sb pg-add pg1
 #
 # Get following messages from log file:
 # 'unix... transact ... Southbound' --> Indicates the pack of updates has been
@@ -17806,3 +17806,43 @@ CHECK_NO_CHANGE_AFTER_RECOMPUTE
 AT_CLEANUP
 ])
 
+OVN_FOR_EACH_NORTHD_NO_HV([
+AT_SETUP([Datapath Sync incremental processing])
+ovn_start
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+check ovn-nbctl --wait=sb ls-add sw0
+check_engine_stats datapath_sync norecompute compute
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+check ovn-nbctl --wait=sb set logical_switch sw0 other_config:fdb_age_threshold=5
+check_engine_stats datapath_sync norecompute compute
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+check ovn-nbctl --wait=sb set logical_switch sw0 other_config:requested-tnl-key=123
+check_engine_stats datapath_sync norecompute compute
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+check ovn-nbctl --wait=sb ls-del sw0
+check_engine_stats datapath_sync norecompute compute
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+check ovn-nbctl --wait=sb lr-add lr0
+check_engine_stats datapath_sync norecompute compute
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+check ovn-nbctl set Logical_Router lr0 options:ct-zone-limit=10
+check_engine_stats datapath_sync norecompute compute
+
+check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
+check ovn-nbctl --wait=sb lr-del lr0
+check_engine_stats datapath_sync norecompute compute
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
+
+AT_CLEANUP
+])

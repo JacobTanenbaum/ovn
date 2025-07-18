@@ -184,7 +184,7 @@ static ENGINE_NODE(dynamic_routes);
 static ENGINE_NODE(group_ecmp_route, CLEAR_TRACKED_DATA);
 static ENGINE_NODE(datapath_logical_router, CLEAR_TRACKED_DATA);
 static ENGINE_NODE(datapath_logical_switch, CLEAR_TRACKED_DATA);
-static ENGINE_NODE(datapath_sync);
+static ENGINE_NODE(datapath_sync, CLEAR_TRACKED_DATA);
 static ENGINE_NODE(datapath_synced_logical_router);
 static ENGINE_NODE(datapath_synced_logical_switch);
 
@@ -225,10 +225,13 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_datapath_logical_router, &en_nb_logical_router,
                      en_datapath_logical_router_logical_router_handler);
 
-    engine_add_input(&en_datapath_sync, &en_datapath_logical_switch, NULL);
-    engine_add_input(&en_datapath_sync, &en_datapath_logical_router, NULL);
-    engine_add_input(&en_datapath_sync, &en_sb_datapath_binding, NULL);
     engine_add_input(&en_datapath_sync, &en_global_config, NULL);
+    engine_add_input(&en_datapath_sync, &en_sb_datapath_binding,
+                     datapath_sync_sb_datapath_binding);
+    engine_add_input(&en_datapath_sync, &en_datapath_logical_switch,
+                     datapath_sync_logical_switch_handler);
+    engine_add_input(&en_datapath_sync, &en_datapath_logical_router,
+                     datapath_sync_logical_router_handler);
 
     engine_add_input(&en_datapath_synced_logical_router, &en_datapath_sync,
                      NULL);
@@ -243,7 +246,6 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_northd, &en_sb_chassis, NULL);
     engine_add_input(&en_northd, &en_sb_mirror, NULL);
     engine_add_input(&en_northd, &en_sb_meter, NULL);
-    engine_add_input(&en_northd, &en_sb_datapath_binding, NULL);
     engine_add_input(&en_northd, &en_sb_dns, NULL);
     engine_add_input(&en_northd, &en_sb_ha_chassis_group, NULL);
     engine_add_input(&en_northd, &en_sb_ip_multicast, NULL);
