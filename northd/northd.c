@@ -812,8 +812,11 @@ ods_build_array_index(struct ovn_datapaths *datapaths)
      * doesn't matter if they are different on every iteration. */
     size_t index = 0;
 
-    datapaths->array = xrealloc(datapaths->array,
-                            ods_size(datapaths) * sizeof *datapaths->array);
+    datapaths->n_array = ods_size(datapaths);
+    datapaths->n_allocated_array = datapaths->n_array + 10;
+    datapaths->array = xrealloc(
+        datapaths->array,
+        datapaths->n_allocated_array * sizeof *datapaths->array);
 
     struct ovn_datapath *od;
     HMAP_FOR_EACH (od, key_node, &datapaths->datapaths) {
@@ -821,6 +824,24 @@ ods_build_array_index(struct ovn_datapaths *datapaths)
         datapaths->array[index++] = od;
         od->datapaths = datapaths;
     }
+}
+
+static void
+ods_assign_array_index(struct ovn_datapaths *datapaths,
+                       struct ovn_datapath *od)
+{
+    ovs_assert(ods_size(datapaths) == (datapaths->n_array + 1));
+    od->index = datapaths->n_array;
+
+    if (datapaths->n_array == datapaths->n_allocated_array) {
+        datapaths->n_allocated_array += 10;
+        datapaths->array = xrealloc(
+            datapaths->array,
+            datapaths->n_allocated_array * sizeof *datapaths->array);
+        }
+        datapaths->array[datapaths->n_array] = od;
+        od->datapaths = datapaths;
+
 }
 
 /* Initializes 'ls_datapaths' to contain a "struct ovn_datapath" for every

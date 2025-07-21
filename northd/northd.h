@@ -90,6 +90,8 @@ struct ovn_datapaths {
 
     /* The array index of each element in 'datapaths'. */
     struct ovn_datapath **array;
+    size_t n_array;
+    size_t n_allocated_array;
 };
 
 static inline size_t
