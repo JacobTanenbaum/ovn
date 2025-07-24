@@ -143,6 +143,7 @@ enum northd_tracked_data_type {
     NORTHD_TRACKED_LR_NATS  = (1 << 2),
     NORTHD_TRACKED_LS_LBS   = (1 << 3),
     NORTHD_TRACKED_LS_ACLS  = (1 << 4),
+    NORTHD_TRACKED_LR_NEW   = (1 << 6),
 };
 
 /* Track what's changed in the northd engine node.
@@ -953,6 +954,12 @@ static inline bool
 northd_has_ls_acls_in_tracked_data(struct northd_tracked_data *trk_nd_changes)
 {
     return trk_nd_changes->type & NORTHD_TRACKED_LS_ACLS;
+}
+
+static inline bool
+northd_has_lr_new_in_tracked_data(struct northd_tracked_data *trk_nd_changes)
+{
+    return trk_nd_changes->type & NORTHD_TRACKED_LR_NEW;
 }
 
 /* Returns 'true' if the IPv4 'addr' is on the same subnet with one of the

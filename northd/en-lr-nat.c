@@ -71,6 +71,7 @@ const struct lr_nat_record *
 lr_nat_table_find_by_index(const struct lr_nat_table *table,
                            size_t od_index)
 {
+    VLOG_ERR("KEYWORD: AM I HERE?");
     return lr_nat_table_find_by_index_(table, od_index);
 }
 
@@ -121,13 +122,15 @@ enum engine_input_handler_result
 lr_nat_northd_handler(struct engine_node *node, void *data_)
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
-    if (!northd_has_tracked_data(&northd_data->trk_data)) {
+    if (!northd_has_tracked_data(&northd_data->trk_data) || northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
         return EN_UNHANDLED;
     }
+    VLOG_ERR("KEYWORD: AFTER UNHANDLED");
 
     if (!northd_has_lr_nats_in_tracked_data(&northd_data->trk_data)) {
         return EN_HANDLED_UNCHANGED;
     }
+    VLOG_ERR("KEYWORD: AFTER UNCHANGED");
 
     struct ed_type_lr_nat_data *data = data_;
     struct lr_nat_record *lrnat_rec;
@@ -135,6 +138,7 @@ lr_nat_northd_handler(struct engine_node *node, void *data_)
     struct hmapx_node *hmapx_node;
 
     HMAPX_FOR_EACH (hmapx_node, &northd_data->trk_data.trk_nat_lrs) {
+        VLOG_ERR("KEYWORD IN THE HMAP FOR EACH");
         od = hmapx_node->data;
         lrnat_rec = lr_nat_table_find_by_index_(&data->lr_nats, od->index);
         ovs_assert(lrnat_rec);
@@ -142,12 +146,15 @@ lr_nat_northd_handler(struct engine_node *node, void *data_)
 
         /* Add the lrnet rec to the tracking data. */
         hmapx_add(&data->trk_data.crupdated, lrnat_rec);
+        VLOG_ERR("KEYWORD: END OF HMAP LOOP");
     }
 
+    VLOG_ERR("KEYWORD: BEFORE LR_NAT_HAS_TRK_DATA");
     if (lr_nat_has_tracked_data(&data->trk_data)) {
         return EN_HANDLED_UPDATED;
     }
 
+    VLOG_ERR("KEYWORD: BEFORE THE END");
     return EN_HANDLED_UNCHANGED;
 }
 

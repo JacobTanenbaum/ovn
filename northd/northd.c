@@ -830,17 +830,23 @@ static void
 ods_assign_array_index(struct ovn_datapaths *datapaths,
                        struct ovn_datapath *od)
 {
+    VLOG_ERR("KEYWORD ASSIGN_ARRAY");
+    VLOG_ERR("KEYWORD: ods_size(datapaths) %d == datapaths->n_array + 1 %d", ods_size(datapaths), datapaths->n_array + 1);
     ovs_assert(ods_size(datapaths) == (datapaths->n_array + 1));
     od->index = datapaths->n_array;
 
+    VLOG_ERR("KEYWORD_FURTHER");
     if (datapaths->n_array == datapaths->n_allocated_array) {
+        VLOG_ERR("KEYWORD: IN THE IF");
         datapaths->n_allocated_array += 10;
         datapaths->array = xrealloc(
             datapaths->array,
             datapaths->n_allocated_array * sizeof *datapaths->array);
         }
-        datapaths->array[datapaths->n_array] = od;
+        VLOG_ERR("KEYWORD: OUT OF THE IF");
+        datapaths->array[datapaths->n_array++] = od;
         od->datapaths = datapaths;
+        VLOG_ERR("KEYWORD: RETURN");
 
 }
 
@@ -5097,13 +5103,35 @@ northd_handle_lr_changes(const struct northd_input *ni,
                          struct northd_data *nd)
 {
     const struct nbrec_logical_router *changed_lr;
+    const struct nbrec_logical_router *new_lr;
 
-    if (!hmapx_is_empty(&ni->synced_lrs->new) ||
-        !hmapx_is_empty(&ni->synced_lrs->deleted)) {
+    if (!hmapx_is_empty(&ni->synced_lrs->deleted)) {
         goto fail;
     }
 
     struct hmapx_node *node;
+    HMAPX_FOR_EACH(node, &ni->synced_lrs->new) {
+        VLOG_ERR("KEYWORD STARTING NEW ROUTER");
+        const struct ovn_synced_logical_router *synced = node->data;
+        new_lr = synced->nb;
+
+        if (!lr_changes_can_be_handled(new_lr)) {
+            goto fail;
+        }
+
+        VLOG_ERR("KEYWORD: BEFORE CREATING THE DATAPATH");
+        struct ovn_datapath *od = ovn_datapath_create(&nd->lr_datapaths.datapaths, &new_lr->header_.uuid, NULL, new_lr, synced->sb);
+        VLOG_ERR("KEYWORD: BEFORE ASSIGN ARRAY");
+        ods_assign_array_index(&nd->lr_datapaths, od);
+        nd->trk_data.type |= NORTHD_TRACKED_LR_NEW;
+        VLOG_ERR("KEYWORD: AFTER ODS");
+        VLOG_ERR("KEYWORD: BOOL %d", northd_has_lr_new_in_tracked_data(&nd->trk_data));
+        if (is_lr_nats_changed(new_lr)) {
+            VLOG_ERR("KEYWORD: CHANGED THIS THING");
+        }
+        
+    }
+    
     HMAPX_FOR_EACH (node, &ni->synced_lrs->updated) {
         const struct ovn_synced_logical_router *synced = node->data;
         changed_lr = synced->nb;
@@ -17716,6 +17744,7 @@ static void
 build_lswitch_and_lrouter_iterate_by_lr(struct ovn_datapath *od,
                                         struct lswitch_flow_build_info *lsi)
 {
+    VLOG_ERR("KEYWORD: BUILD_LSWITCH_AND_LROUTER_ITERATE_BY_LR");
     ovs_assert(od->nbr);
     build_adm_ctrl_flows_for_lrouter(od, lsi->lflows, NULL);
     build_neigh_learning_flows_for_lrouter(od, lsi->lflows, &lsi->match,
@@ -18046,6 +18075,8 @@ build_lswitch_and_lrouter_flows(
     struct simap *route_tables,
     const struct sbrec_acl_id_table *sbrec_acl_id_table)
 {
+
+    VLOG_ERR("KEYWORD: REBUILDING LSWITCH_AND_LROUTER_FLOWS");
 
     char *svc_check_match = xasprintf("eth.dst == %s", svc_monitor_mac);
 

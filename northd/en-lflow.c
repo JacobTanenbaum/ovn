@@ -130,9 +130,16 @@ enum engine_input_handler_result
 lflow_northd_handler(struct engine_node *node,
                      void *data)
 {
+    VLOG_ERR("KEYWORD: IN LFLOW_HANDLER");
     struct northd_data *northd_data = engine_get_input_data("northd", node);
-    if (!northd_has_tracked_data(&northd_data->trk_data)) {
+    if (northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
+        VLOG_ERR("KEYWORD: SHOULD BE HERE");
+    }
+    if (!northd_has_tracked_data(&northd_data->trk_data) || northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
+        VLOG_ERR("KEYWORD: NOT HANDLED LFLOW");
         return EN_UNHANDLED;
+    } else {
+        VLOG_ERR("KEYWORD LFLOW WHAT IS HAPPENING");
     }
 
     const struct engine_context *eng_ctx = engine_get_context();

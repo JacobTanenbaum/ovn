@@ -134,8 +134,10 @@ en_lr_stateful_run(struct engine_node *node, void *data_)
 enum engine_input_handler_result
 lr_stateful_northd_handler(struct engine_node *node, void *data OVS_UNUSED)
 {
+    VLOG_ERR("KEYWORD: IN THE lr_stateful handler");
     struct northd_data *northd_data = engine_get_input_data("northd", node);
-    if (!northd_has_tracked_data(&northd_data->trk_data)) {
+    if (!northd_has_tracked_data(&northd_data->trk_data) || northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
+        VLOG_ERR("KEYWORD: RETURNING LR_STATEFUL_HANDLER EN_UNDHANDLED");
         return EN_UNHANDLED;
     }
 
@@ -163,12 +165,14 @@ lr_stateful_northd_handler(struct engine_node *node, void *data OVS_UNUSED)
      * and (3) if any.
      *
      * */
+    VLOG_ERR("KEYWORD: RETURNING LR_STATEFUL_HANDLER EN_UNCHANGED");
     return EN_HANDLED_UNCHANGED;
 }
 
 enum engine_input_handler_result
 lr_stateful_lb_data_handler(struct engine_node *node, void *data_)
 {
+    VLOG_ERR("KEYWORD: LR_STATEFUL HERE");
     struct ed_type_lb_data *lb_data = engine_get_input_data("lb_data", node);
     if (!lb_data->tracked) {
         return EN_UNHANDLED;

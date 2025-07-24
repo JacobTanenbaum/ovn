@@ -7600,9 +7600,16 @@ check ovn-nbctl lr-add rtr \
   -- lb-add lb-test 43.43.43.43:4343 42.42.42.2:4242 tcp \
   -- lr-lb-add rtr lb-test
 check ovn-nbctl --wait=sb sync
+#check ovn-nbctl lr-add rtr 
+#check ovn-nbctl set logical_router rtr options:chassis=hv 
+#check ovn-nbctl lrp-add rtr rtr-ls 00:00:00:00:01:00 42.42.42.1/24 
+#check ovn-nbctl  lb-add lb-test 43.43.43.43:4343 42.42.42.2:4242 tcp 
+#check ovn-nbctl lr-lb-add rtr lb-test
+#check ovn-nbctl --wait=sb sync
 
 flow="eth.dst == 00:00:00:00:01:00 && inport == \"rtr-ls\" && ip4.src == 42.42.42.42 && ip4.dst == 43.43.43.43 && ip.ttl == 64 && tcp && tcp.dst == 4343"
 
+CHECK_NO_CHANGE_AFTER_RECOMPUTE
 AT_CHECK_UNQUOTED([ovn_trace --ct new --minimal "${flow}" --lb-dst 42.42.42.42:4242], [0], [dnl
 ct_dnat /* assuming no un-dnat entry, so no change */ {
     ct_lb_mark /* default (use --ct to customize) */ {
@@ -12595,11 +12602,11 @@ check ovn-nbctl --wait=sb lsp-add sw0 sw0p1 -- lsp-set-addresses sw0p1 "00:00:20
 
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 check ovn-nbctl --wait=sb lr-add lr0
-check_engine_stats northd recompute nocompute
-check_engine_stats lr_nat recompute nocompute
-check_engine_stats lr_stateful recompute nocompute
-check_engine_stats sync_to_sb_pb recompute nocompute
-check_engine_stats sync_to_sb_lb recompute nocompute
+check_engine_stats northd norecompute compute
+check_engine_stats lr_nat norecompute compute
+check_engine_stats lr_stateful norecompute compute
+check_engine_stats sync_to_sb_pb norecompute compute
+check_engine_stats sync_to_sb_lb norecompute compute
 check_engine_stats lflow recompute nocompute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 
