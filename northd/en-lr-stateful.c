@@ -138,6 +138,9 @@ lr_stateful_northd_handler(struct engine_node *node, void *data OVS_UNUSED)
     if (!northd_has_tracked_data(&northd_data->trk_data)) {
         return EN_UNHANDLED;
     }
+    if (northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
+        return EN_UNHANDLED;
+    }
 
     /* This node uses the below data from the en_northd engine node.
      * See (lr_stateful_get_input_data())

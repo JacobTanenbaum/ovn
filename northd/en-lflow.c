@@ -132,6 +132,9 @@ lflow_northd_handler(struct engine_node *node,
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     if (!northd_has_tracked_data(&northd_data->trk_data)) {
+    }
+    if (!northd_has_tracked_data(&northd_data->trk_data)
+        || northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
         return EN_UNHANDLED;
     }
 

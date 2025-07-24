@@ -125,7 +125,8 @@ lr_nat_northd_handler(struct engine_node *node, void *data_)
         return EN_UNHANDLED;
     }
 
-    if (!northd_has_lr_nats_in_tracked_data(&northd_data->trk_data)) {
+    if (!northd_has_lr_nats_in_tracked_data(&northd_data->trk_data)
+        && !northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
         return EN_HANDLED_UNCHANGED;
     }
 
@@ -133,6 +134,21 @@ lr_nat_northd_handler(struct engine_node *node, void *data_)
     struct lr_nat_record *lrnat_rec;
     const struct ovn_datapath *od;
     struct hmapx_node *hmapx_node;
+    struct lr_nat_table *table = &data->lr_nats;
+    const struct ovn_datapaths *lr_datapaths = &northd_data->lr_datapaths;
+
+    /* If there is a new router we need to reallocate the size of the
+     * lr_nat_table. */
+    if (northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
+        table->array = xrealloc(table->array,
+                                ods_size(lr_datapaths) * sizeof *table->array);
+    }
+
+    HMAPX_FOR_EACH (hmapx_node, &northd_data->trk_data.trk_new_lrs) {
+        od = hmapx_node->data;
+        lrnat_rec = lr_nat_record_create(table, od, &northd_data->lr_ports);
+        hmapx_add(&data->trk_data.crupdated, lrnat_rec);
+    }
 
     HMAPX_FOR_EACH (hmapx_node, &northd_data->trk_data.trk_nat_lrs) {
         od = hmapx_node->data;

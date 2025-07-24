@@ -839,7 +839,7 @@ ods_assign_array_index(struct ovn_datapaths *datapaths,
             datapaths->array,
             datapaths->n_allocated_array * sizeof *datapaths->array);
         }
-        datapaths->array[datapaths->n_array] = od;
+        datapaths->array[datapaths->n_array++] = od;
         od->datapaths = datapaths;
 
 }
@@ -4416,6 +4416,7 @@ init_northd_tracked_data(struct northd_data *nd)
     hmapx_init(&trk_data->trk_nat_lrs);
     hmapx_init(&trk_data->ls_with_changed_lbs);
     hmapx_init(&trk_data->ls_with_changed_acls);
+    hmapx_init(&trk_data->trk_new_lrs);
 }
 
 static void
@@ -4431,6 +4432,7 @@ destroy_northd_tracked_data(struct northd_data *nd)
     hmapx_destroy(&trk_data->trk_nat_lrs);
     hmapx_destroy(&trk_data->ls_with_changed_lbs);
     hmapx_destroy(&trk_data->ls_with_changed_acls);
+    hmapx_destroy(&trk_data->trk_new_lrs);
 }
 
 /* Check if a changed LSP can be handled incrementally within the I-P engine
@@ -5097,13 +5099,37 @@ northd_handle_lr_changes(const struct northd_input *ni,
                          struct northd_data *nd)
 {
     const struct nbrec_logical_router *changed_lr;
+    const struct nbrec_logical_router *new_lr;
 
-    if (!hmapx_is_empty(&ni->synced_lrs->new) ||
-        !hmapx_is_empty(&ni->synced_lrs->deleted)) {
+    if (!hmapx_is_empty(&ni->synced_lrs->deleted)) {
         goto fail;
     }
 
     struct hmapx_node *node;
+    HMAPX_FOR_EACH (node, &ni->synced_lrs->new) {
+        const struct ovn_synced_logical_router *synced = node->data;
+        new_lr = synced->nb;
+
+        if (new_lr->n_ports > 0
+            || new_lr->n_policies > 0
+            || new_lr->n_static_routes > 0
+            || !lrouter_is_enabled(new_lr)
+            || !smap_is_empty(&new_lr->options)
+            || !smap_is_empty(&new_lr->external_ids)) {
+            goto fail;
+        }
+
+        struct ovn_datapath *od =
+            ovn_datapath_create(&nd->lr_datapaths.datapaths,
+                                &new_lr->header_.uuid,
+                                NULL,
+                                new_lr,
+                                synced->sb);
+        ods_assign_array_index(&nd->lr_datapaths, od);
+        nd->trk_data.type |= NORTHD_TRACKED_LR_NEW;
+        hmapx_add(&nd->trk_data.trk_new_lrs, od);
+    }
+
     HMAPX_FOR_EACH (node, &ni->synced_lrs->updated) {
         const struct ovn_synced_logical_router *synced = node->data;
         changed_lr = synced->nb;
