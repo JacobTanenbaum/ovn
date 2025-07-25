@@ -132,14 +132,23 @@ en_lr_stateful_run(struct engine_node *node, void *data_)
 }
 
 enum engine_input_handler_result
-lr_stateful_northd_handler(struct engine_node *node, void *data OVS_UNUSED)
+lr_stateful_northd_handler(struct engine_node *node, void *data_ )
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     if (!northd_has_tracked_data(&northd_data->trk_data)) {
         return EN_UNHANDLED;
     }
     if (northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
-        return EN_UNHANDLED;
+        struct lr_stateful_input input_data = lr_stateful_get_input_data(node);
+        struct ed_type_lr_stateful *data = data_;
+
+        struct lr_stateful_table  *table = &data->table;
+        const struct ovn_datapaths *lr_datapaths = input_data.lr_datapaths;
+
+        table->array = xrealloc(table->array,
+                            ods_size(lr_datapaths) * sizeof *table->array);
+
+        return EN_HANDLED_UPDATED;
     }
 
     /* This node uses the below data from the en_northd engine node.
@@ -147,7 +156,7 @@ lr_stateful_northd_handler(struct engine_node *node, void *data OVS_UNUSED)
      *   1. northd_data->lr_datapaths
      *      This data gets updated when a logical router is created or deleted.
      *      northd engine node presently falls back to full recompute when
-     *      this happens and so does this node.
+     *      a router is deleted and so does this node.
      *      Note: When we add I-P to the created/deleted logical routers, we
      *      need to revisit this handler.
      *
