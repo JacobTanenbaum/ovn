@@ -132,9 +132,6 @@ lflow_northd_handler(struct engine_node *node,
 {
     struct northd_data *northd_data = engine_get_input_data("northd", node);
     if (!northd_has_tracked_data(&northd_data->trk_data)) {
-    }
-    if (!northd_has_tracked_data(&northd_data->trk_data)
-        || northd_has_lr_new_in_tracked_data(&northd_data->trk_data)) {
         return EN_UNHANDLED;
     }
 
@@ -143,6 +140,13 @@ lflow_northd_handler(struct engine_node *node,
 
     struct lflow_input lflow_input;
     lflow_get_input_data(node, &lflow_input);
+
+    if (!lflow_handle_northd_lr_creation(eng_ctx->ovnsb_idl_txn,
+                                         &northd_data->trk_data.trk_new_lrs,
+                                         &lflow_input,
+                                         lflow_data->lflow_table)) {
+        return EN_UNHANDLED;
+    }
 
     if (!lflow_handle_northd_port_changes(eng_ctx->ovnsb_idl_txn,
                                           &northd_data->trk_data.trk_lsps,
