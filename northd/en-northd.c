@@ -194,10 +194,11 @@ northd_nb_logical_router_handler(struct engine_node *node,
     }
 
     if (northd_has_lr_nats_in_tracked_data(&nd->trk_data)
-        || northd_has_lr_new_in_tracked_data(&nd->trk_data)) {
+        || northd_has_lr_new_in_tracked_data(&nd->trk_data)
+        || !hmapx_is_empty(&nd->trk_data.trk_deleted_lrs)) {
+        VLOG_ERR("RETURNING EN_HANDLED_UPDATED");
         return EN_HANDLED_UPDATED;
     }
-
     return EN_HANDLED_UNCHANGED;
 }
 

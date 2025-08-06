@@ -531,7 +531,9 @@ ovn_datapath_destroy(struct hmap *datapaths, struct ovn_datapath *od)
         /* Don't remove od->list.  It is used within build_datapaths() as a
          * private list and once we've exited that function it is not safe to
          * use it. */
-        hmap_remove(datapaths, &od->key_node);
+        if(datapaths) {
+            hmap_remove(datapaths, &od->key_node);
+        }
         ovn_destroy_tnlids(&od->port_tnlids);
         destroy_ipam_info(&od->ipam_info);
         vector_destroy(&od->router_ports);
@@ -4429,7 +4431,6 @@ init_northd_tracked_data(struct northd_data *nd)
 static void
 destroy_northd_tracked_data(struct northd_data *nd)
 {
-    VLOG_ERR("KEYWORD: DESTROY_NORTHD_TRACKED_DATA");
     struct northd_tracked_data *trk_data = &nd->trk_data;
     trk_data->type = NORTHD_TRACKED_NONE;
     hmapx_destroy(&trk_data->trk_lsps.created);
@@ -4441,6 +4442,26 @@ destroy_northd_tracked_data(struct northd_data *nd)
     hmapx_destroy(&trk_data->ls_with_changed_lbs);
     hmapx_destroy(&trk_data->ls_with_changed_acls);
     hmapx_destroy(&trk_data->trk_new_lrs);
+    struct hmapx_node *node;
+    HMAPX_FOR_EACH (node, &trk_data->trk_deleted_lrs) {
+        struct ovn_datapath *od = node->data;
+        /* od->lr_group is the group of routers this router is connected. At
+         * this point routers with no ports are able to be processed without
+         * a full recompute. 
+         *
+         * This will need to be revisited when routers with ports can be 
+         * deleted in the I-P node.
+         * */
+        ovs_assert(od->lr_group->n_router_dps == 1); 
+        free(od->lr_group->router_dps);
+        sset_destroy(&od->lr_group->ha_chassis_groups);
+        hmapx_destroy(&od->lr_group->tmp_ha_ref_chassis);
+        free(od->lr_group);
+        
+         
+        ovn_datapath_destroy(NULL, od);
+
+    }
     hmapx_destroy(&trk_data->trk_deleted_lrs);
 }
 
@@ -5109,12 +5130,38 @@ northd_handle_lr_changes(const struct northd_input *ni,
 {
     const struct nbrec_logical_router *changed_lr;
     const struct nbrec_logical_router *new_lr;
+    const struct nbrec_logical_router *deleted_lr;
 
-    if (!hmapx_is_empty(&ni->synced_lrs->deleted)) {
-        goto fail;
-    }
 
     struct hmapx_node *node;
+    HMAPX_FOR_EACH (node, &ni->synced_lrs->deleted) {
+        const struct ovn_synced_logical_router *synced = node->data;
+        deleted_lr = synced->nb;
+
+        if (deleted_lr->n_ports > 0
+            || deleted_lr->n_policies > 0
+            || deleted_lr->n_static_routes > 0
+            || !lrouter_is_enabled(deleted_lr)
+            || !smap_is_empty(&deleted_lr->options)
+            || !smap_is_empty(&deleted_lr->external_ids)) {
+            goto fail;
+        }
+        struct ovn_datapath *od = ovn_datapath_find_(
+                                &nd->lr_datapaths.datapaths,
+                                &deleted_lr->header_.uuid);
+        if (!od) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 1);
+            VLOG_WARN_RL(&rl, "Internal error: a tracked updated LR "
+                        "doesn't exist in lr_datapaths: "UUID_FMT,
+                        UUID_ARGS(&deleted_lr->header_.uuid));
+            goto fail;
+        }
+        hmap_remove(&od->datapaths->datapaths, &od->key_node);
+        ods_build_array_index(od->datapaths);
+        hmapx_add(&nd->trk_data.trk_deleted_lrs, od);
+        VLOG_ERR("KEYWORD IN HERE FOR THE DELETED ROUTER");
+    }
+
     HMAPX_FOR_EACH (node, &ni->synced_lrs->new) {
         const struct ovn_synced_logical_router *synced = node->data;
         new_lr = synced->nb;
