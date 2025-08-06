@@ -12603,6 +12603,8 @@ check_engine_stats sync_to_sb_pb recompute nocompute
 check_engine_stats sync_to_sb_lb norecompute compute
 check_engine_stats lflow norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
+check ovn-nbctl --wait=sb lr-del lr0
+check ovn-nbctl --wait=sb lr-add lr0
 
 # Adding a logical router port should result in recompute
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats

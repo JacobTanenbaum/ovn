@@ -159,6 +159,10 @@ struct northd_tracked_data {
      * hmapx node is 'struct ovn_datapath *'. */
     struct hmapx trk_new_lrs;
 
+    /* Tracked logical routers that are deleted.
+     * hmapx node is 'struct ovn_datapath *'. */
+    struct hmapx trk_deleted_lrs;
+
     /* Tracked logical routers whose NATs have changed.
      * hmapx node is 'struct ovn_datapath *'. */
     struct hmapx trk_nat_lrs;

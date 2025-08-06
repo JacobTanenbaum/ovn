@@ -4423,11 +4423,13 @@ init_northd_tracked_data(struct northd_data *nd)
     hmapx_init(&trk_data->ls_with_changed_lbs);
     hmapx_init(&trk_data->ls_with_changed_acls);
     hmapx_init(&trk_data->trk_new_lrs);
+    hmapx_init(&trk_data->trk_deleted_lrs);
 }
 
 static void
 destroy_northd_tracked_data(struct northd_data *nd)
 {
+    VLOG_ERR("KEYWORD: DESTROY_NORTHD_TRACKED_DATA");
     struct northd_tracked_data *trk_data = &nd->trk_data;
     trk_data->type = NORTHD_TRACKED_NONE;
     hmapx_destroy(&trk_data->trk_lsps.created);
@@ -4439,6 +4441,7 @@ destroy_northd_tracked_data(struct northd_data *nd)
     hmapx_destroy(&trk_data->ls_with_changed_lbs);
     hmapx_destroy(&trk_data->ls_with_changed_acls);
     hmapx_destroy(&trk_data->trk_new_lrs);
+    hmapx_destroy(&trk_data->trk_deleted_lrs);
 }
 
 /* Check if a changed LSP can be handled incrementally within the I-P engine
