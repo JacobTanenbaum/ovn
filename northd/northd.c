@@ -19659,8 +19659,7 @@ lflow_handle_northd_lr_changes(struct ovsdb_idl_txn *ovnsb_txn,
     HMAPX_FOR_EACH (hmapx_node, &tracked_lrs->deleted) {
         struct ovn_datapath *od = hmapx_node->data;
         handled = lflow_ref_resync_flows(
-            od->datapath_lflows, lflows, ovnsb_txn, lflow_input->ls_datapaths,
-            lflow_input->lr_datapaths,
+            od->datapath_lflows, lflows, ovnsb_txn, lflow_input->dps,
             lflow_input->ovn_internal_version_changed,
             lflow_input->sbrec_logical_flow_table,
             lflow_input->sbrec_logical_dp_group_table);
@@ -19693,8 +19692,7 @@ lflow_handle_northd_lr_changes(struct ovsdb_idl_txn *ovnsb_txn,
         struct ovn_datapath *od = hmapx_node->data;
 
         handled = lflow_ref_sync_lflows(
-            od->datapath_lflows, lflows, ovnsb_txn, lflow_input->ls_datapaths,
-            lflow_input->lr_datapaths,
+            od->datapath_lflows, lflows, ovnsb_txn, lflow_input->dps,
             lflow_input->ovn_internal_version_changed,
             lflow_input->sbrec_logical_flow_table,
             lflow_input->sbrec_logical_dp_group_table);
