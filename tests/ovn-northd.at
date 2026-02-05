@@ -12458,7 +12458,9 @@ check ovn-nbctl ls-lb-add sw4 lb2
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 check ovn-nbctl --wait=sb ls-lb-add sw5 lb2
 check_engine_stats lflow norecompute compute
+echo "HERE"
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
+echo "THERE"
 
 lb_lflow_dp=$(ovn-sbctl --bare --columns logical_datapath list logical_flow $lb_lflow_uuid)
 AT_CHECK([test "$lb_lflow_dp" = ""])
@@ -12652,7 +12654,7 @@ check_engine_stats lr_nat norecompute compute
 check_engine_stats lr_stateful norecompute compute
 check_engine_stats sync_to_sb_pb norecompute compute
 check_engine_stats sync_to_sb_lb norecompute compute
-check_engine_stats lflow recompute nocompute
+check_engine_stats lflow norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
@@ -12663,7 +12665,7 @@ check_engine_stats lr_nat norecompute compute
 check_engine_stats lr_stateful norecompute compute
 check_engine_stats sync_to_sb_pb norecompute compute
 check_engine_stats sync_to_sb_lb norecompute compute
-check_engine_stats lflow recompute nocompute
+check_engine_stats lflow norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 
 check ovn-nbctl --wait=sb lr-add lr0

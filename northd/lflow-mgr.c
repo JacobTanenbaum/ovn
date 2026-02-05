@@ -651,7 +651,7 @@ lflow_ref_destroy(struct lflow_ref *lflow_ref)
  * from the lrn->lflow's dpg bitmap
  */
 void
-lflow_ref_unlink_lflows(struct lflow_ref *lflow_ref)
+lflow_ref_unlink_lflows(struct lflow_ref *lflow_ref, struct hmap *dp_groups)
 {
     struct lflow_ref_node *lrn;
 
@@ -684,7 +684,7 @@ lflow_ref_resync_flows(struct lflow_ref *lflow_ref,
                        const struct sbrec_logical_flow_table *sbflow_table,
                        const struct sbrec_logical_dp_group_table *dpgrp_table)
 {
-    lflow_ref_unlink_lflows(lflow_ref);
+    lflow_ref_unlink_lflows(lflow_ref, NULL);
     return lflow_ref_sync_lflows__(lflow_ref, lflow_table, ovnsb_txn,
                                    dps,
                                    ovn_internal_version_changed, sbflow_table,
@@ -1053,6 +1053,12 @@ do_ovn_lflow_add(struct lflow_table *lflow_table, size_t dp_bitmap_len,
     if (old_lflow) {
         dynamic_bitmap_realloc(&old_lflow->dpg_bitmap, dp_bitmap_len);
         if (old_lflow->sync_state != LFLOW_STALE) {
+            if (old_lflow->dpg) {
+                struct hmap *dp_groups;
+                enum ovn_datapath_type dp_type = ovn_stage_to_datapath_type(old_lflow->stage);
+                dp_groups = &lflow_table->dp_groups[dp_type];
+                ovn_dp_group_release(dp_groups, old_lflow->dpg);
+            }
             return old_lflow;
         }
         sbuuid = old_lflow->sb_uuid;
@@ -1242,7 +1248,7 @@ sync_lflow_to_sb(struct ovn_lflow *lflow,
 
     if (pre_sync_dpg != lflow->dpg) {
         ovn_dp_group_use(lflow->dpg);
-        ovn_dp_group_release(dp_groups, pre_sync_dpg);
+        //ovn_dp_group_release(dp_groups, pre_sync_dpg);
     }
 
     lflow->sync_state = LFLOW_SYNCED;
@@ -1276,6 +1282,9 @@ ovn_dp_group_use(struct ovn_dp_group *dpg)
 static void
 ovn_dp_group_release(struct hmap *dp_groups, struct ovn_dp_group *dpg)
 {
+    if (dpg) {
+        VLOG_ERR("\tKEYWORD: before decrement %"PRIu64"", dpg->refcnt);
+    }
     if (dpg && !--dpg->refcnt) {
         hmap_remove(dp_groups, &dpg->node);
         ovn_dp_group_destroy(dpg);
