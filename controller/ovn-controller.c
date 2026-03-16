@@ -7891,21 +7891,27 @@ main(int argc, char *argv[])
                                    !daemon_started_recently());
                         stopwatch_stop(OFCTRL_PUT_STOPWATCH_NAME, time_msec());
                     }
-                    stopwatch_start(OFCTRL_SEQNO_RUN_STOPWATCH_NAME,
-                                    time_msec());
-                    ofctrl_seqno_run(ofctrl_get_cur_cfg());
-                    stopwatch_stop(OFCTRL_SEQNO_RUN_STOPWATCH_NAME,
-                                   time_msec());
-                    stopwatch_start(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
-                                    time_msec());
-                    if_status_mgr_run(if_mgr, binding_data, chassis,
-                                      ovsrec_interface_table_get(
-                                                  ovs_idl_loop.idl),
-                                      sbrec_port_binding_table_get(
-                                                 ovnsb_idl_loop.idl),
-                                      !ovnsb_idl_txn, !ovs_idl_txn);
-                    stopwatch_stop(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
-                                   time_msec());
+                    /* In the monitor-all=false case we have to wait for the
+                     * update from ovn_sb before being able to process
+                     * interface status.
+                     */
+                    if (ovnsb_cond_seqno >= ovnsb_expected_cond_seqno) {
+                        stopwatch_start(OFCTRL_SEQNO_RUN_STOPWATCH_NAME,
+                                        time_msec());
+                        ofctrl_seqno_run(ofctrl_get_cur_cfg());
+                        stopwatch_stop(OFCTRL_SEQNO_RUN_STOPWATCH_NAME,
+                                       time_msec());
+                        stopwatch_start(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
+                                        time_msec());
+                        if_status_mgr_run(if_mgr, binding_data, chassis,
+                                          ovsrec_interface_table_get(
+                                                      ovs_idl_loop.idl),
+                                          sbrec_port_binding_table_get(
+                                                     ovnsb_idl_loop.idl),
+                                          !ovnsb_idl_txn, !ovs_idl_txn);
+                        stopwatch_stop(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
+                                       time_msec());
+                    }
                 }
             }
 
