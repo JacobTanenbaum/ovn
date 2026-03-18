@@ -21,7 +21,11 @@
 #include "util.h"
 #include "vec.h"
 
+#include "openvswitch/vlog.h"
+
 #define VECTOR_THRESHOLD 1024
+
+VLOG_DEFINE_THIS_MODULE(stupid);
 
 /* A sequence number update request, i.e., when the barrier corresponding to
  * the 'flow_cfg' sequence number is replied to by OVS then it is safe
@@ -180,11 +184,13 @@ ofctrl_seqno_update_create(size_t seqno_type, uint64_t new_cfg)
 void
 ofctrl_seqno_run(uint64_t flow_cfg)
 {
+    VLOG_ERR("KEYWORD: %"PRIu64"", flow_cfg);
     size_t index = 0;
 
     struct ofctrl_seqno_update *update;
     VECTOR_FOR_EACH_PTR (&ofctrl_seqno_updates, update) {
         if (flow_cfg < update->flow_cfg) {
+            VLOG_ERR("KEYWORD: flow_cfg < udpate->flow_cfg");
             break;
         }
         struct ofctrl_seqno_state *state =

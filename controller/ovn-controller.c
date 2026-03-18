@@ -442,6 +442,16 @@ out:;
     for (size_t i = 0; i < ARRAY_SIZE(cond_seqnos); i++) {
         expected_cond_seqno = MAX(expected_cond_seqno, cond_seqnos[i]);
     }
+    if (local_datapaths) {
+        struct local_datapath *ld;
+        HMAP_FOR_EACH (ld, hmap_node, local_datapaths) {
+///            VLOG_ERR("KEYWORD: DATAPATH %s ld->cond_seqno %u ::::::expected_cond_seqno = %u", smap_get(&ld->datapath->external_ids, "name"), ld->cond_seqno, expected_cond_seqno);
+            if (ld->cond_seqno == 0) {
+                ld->cond_seqno = expected_cond_seqno;
+            }
+            VLOG_ERR("KEYWORD: DATAPATH "UUID_FMT" ld->cond_seqno %u ::::::expected_cond_seqno = %u", UUID_ARGS(&ld->datapath->header_.uuid), ld->cond_seqno, expected_cond_seqno);
+        }
+    }
 
     ovsdb_idl_condition_destroy(&pb);
     ovsdb_idl_condition_destroy(&lf);
@@ -7599,8 +7609,11 @@ main(int argc, char *argv[])
                                            &br_int_dp->capabilities : NULL,
                                            br_int_remote.target,
                                            br_int_remote.probe_interval)) {
+                VLOG_INFO("KEYWORD: SHOULD ALWAYS HIT");
                 VLOG_INFO("OVS feature set changed, force recompute.");
+                VLOG_INFO("KEYWORD: THIS WAY BE DRAGONS");
                 engine_set_force_recompute();
+                VLOG_INFO("KEYWORD: OR NOT ");
 
                 struct ed_type_lflow_output *lflow_out_data =
                     engine_get_internal_data(&en_lflow_output);
@@ -7893,21 +7906,20 @@ main(int argc, char *argv[])
                     }
                         stopwatch_start(OFCTRL_SEQNO_RUN_STOPWATCH_NAME,
                                         time_msec());
+                        VLOG_ERR("KEYWORD: RUNNING FROM OVN_CONTROLLER");
                         ofctrl_seqno_run(ofctrl_get_cur_cfg());
+                        VLOG_ERR("KEYWORD: ENDING FROM OVN_CONTROLLER");
                         stopwatch_stop(OFCTRL_SEQNO_RUN_STOPWATCH_NAME,
                                        time_msec());
                         stopwatch_start(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
                                         time_msec());
-                        struct local_datapath *my_ld;
-                        HMAP_FOR_EACH (my_ld, hmap_node, &runtime_data->local_datapaths) {
-
-                            VLOG_DBG("KEYWORD: Local_DATAPATH %s", smap_get(&my_ld->datapath->external_ids, "name"));
-                        }
                         if_status_mgr_run(if_mgr, binding_data, chassis,
                                           ovsrec_interface_table_get(
                                                       ovs_idl_loop.idl),
                                           sbrec_port_binding_table_get(
                                                      ovnsb_idl_loop.idl),
+                                          &runtime_data->local_datapaths,
+                                          ovnsb_cond_seqno, 
                                           !ovnsb_idl_txn, !ovs_idl_txn);
                         stopwatch_stop(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
                                        time_msec());

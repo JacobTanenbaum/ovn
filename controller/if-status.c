@@ -18,6 +18,7 @@
 #include "binding.h"
 #include "if-status.h"
 #include "lib/ofctrl-seqno.h"
+#include "local_data.h"
 #include "ovsport.h"
 #include "simap.h"
 
@@ -694,10 +695,19 @@ if_status_mgr_run(struct if_status_mgr *mgr,
                   const struct sbrec_chassis *chassis_rec,
                   const struct ovsrec_interface_table *iface_table,
                   const struct sbrec_port_binding_table *pb_table,
+                  const struct hmap *local_datapaths,
+                  unsigned int cond_seqno,
                   bool sb_readonly, bool ovs_readonly)
 {
+    VLOG_ERR("KEYWORD: RUNNING IF_STATUS_MGR_RUN");
     struct ofctrl_acked_seqnos *acked_seqnos =
             ofctrl_acked_seqnos_get(mgr->iface_seq_type_pb_cfg);
+ 
+    
+    if (vector_is_empty(&acked_seqnos->acked)) {
+        VLOG_ERR("KEYWORD: WHAT IS HAPPENING acked_seqnos empty");
+    }
+    
     struct hmapx_node *node;
 
     /* Move interfaces from state OIF_INSTALL_FLOWS to OIF_MARK_UP if a
@@ -709,6 +719,39 @@ if_status_mgr_run(struct if_status_mgr *mgr,
 
         if (!ofctrl_acked_seqnos_contains(acked_seqnos,
                                           iface->install_seqno)) {
+            VLOG_ERR("KEYWORD: iface->install_seqno = %"PRIu32"", iface->install_seqno);
+            VLOG_ERR("KEYWORD: LAST_ACKED = %"PRIu64"", acked_seqnos->last_acked);
+            VLOG_ERR("KEYWORD: POINTLESS!!!!");
+        }
+
+        const struct sbrec_port_binding *pb =
+            sbrec_port_binding_table_get_for_uuid(pb_table,
+                                                      &iface->pb_uuid);
+        if (pb) {
+            VLOG_ERR("\tKEYWORD: DATAAPTH UUID = "UUID_FMT"", UUID_ARGS(&pb->datapath->header_.uuid));
+            const struct local_datapath *ld;
+            bool should_continue = false;
+            HMAP_FOR_EACH (ld, hmap_node, local_datapaths) {
+                if (uuid_equals(&ld->datapath->header_.uuid, &pb->datapath->header_.uuid)) {
+                    VLOG_ERR("KEYWORD: ld->cond_seq: %u    --- cond_seq: %u", ld->cond_seqno, cond_seqno);
+                    if (cond_seqno < ld->cond_seqno) {
+                        VLOG_ERR("KEYWORD: SHOULD NOT UPDATE");
+                        should_continue=true;
+                        break;
+                    }                    
+                }
+            }
+            if (should_continue) {
+                VLOG_ERR("KEYWORD: SHOULD CONTINUE");
+                continue;
+            } else {
+                VLOG_ERR("KEYWORD: SHOULD UPDATE");
+            }
+        }
+
+        if (!ofctrl_acked_seqnos_contains(acked_seqnos,
+                                          iface->install_seqno)) {
+            VLOG_ERR("KEYWORD: ACKED_SEQNOS NOT THERE?");
             continue;
         }
         /* Wait for ovn-installed to be absent before moving to MARK_UP state.

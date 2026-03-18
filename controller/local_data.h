@@ -65,6 +65,7 @@ struct local_datapath {
 
     struct shash external_ports;
     struct shash multichassis_ports;
+    unsigned int cond_seqno;
 };
 
 struct local_datapath *local_datapath_alloc(

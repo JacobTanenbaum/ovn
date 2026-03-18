@@ -49,6 +49,8 @@ void if_status_mgr_run(struct if_status_mgr *mgr, struct local_binding_data *,
                        const struct sbrec_chassis *,
                        const struct ovsrec_interface_table *iface_table,
                        const struct sbrec_port_binding_table *pb_table,
+                       const struct hmap *local_datapaths,
+                       unsigned int cond_seqno,
                        bool sb_readonly, bool ovs_readonly);
 void if_status_mgr_get_memory_usage(struct if_status_mgr *mgr,
                                     struct simap *usage);
