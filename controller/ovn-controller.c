@@ -7891,11 +7891,6 @@ main(int argc, char *argv[])
                                    !daemon_started_recently());
                         stopwatch_stop(OFCTRL_PUT_STOPWATCH_NAME, time_msec());
                     }
-                    /* In the monitor-all=false case we have to wait for the
-                     * update from ovn_sb before being able to process
-                     * interface status.
-                     */
-                    if (ovnsb_cond_seqno >= ovnsb_expected_cond_seqno) {
                         stopwatch_start(OFCTRL_SEQNO_RUN_STOPWATCH_NAME,
                                         time_msec());
                         ofctrl_seqno_run(ofctrl_get_cur_cfg());
@@ -7903,6 +7898,11 @@ main(int argc, char *argv[])
                                        time_msec());
                         stopwatch_start(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
                                         time_msec());
+                        struct local_datapath *my_ld;
+                        HMAP_FOR_EACH (my_ld, hmap_node, &runtime_data->local_datapaths) {
+
+                            VLOG_DBG("KEYWORD: Local_DATAPATH %s", smap_get(&my_ld->datapath->external_ids, "name"));
+                        }
                         if_status_mgr_run(if_mgr, binding_data, chassis,
                                           ovsrec_interface_table_get(
                                                       ovs_idl_loop.idl),
@@ -7911,7 +7911,6 @@ main(int argc, char *argv[])
                                           !ovnsb_idl_txn, !ovs_idl_txn);
                         stopwatch_stop(IF_STATUS_MGR_RUN_STOPWATCH_NAME,
                                        time_msec());
-                    }
                 }
             }
 
