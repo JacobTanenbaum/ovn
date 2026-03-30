@@ -41,6 +41,7 @@
 #include "en-northd-output.h"
 #include "en-meters.h"
 #include "en-sampling-app.h"
+#include "en-syncer.h"
 #include "en-sync-sb.h"
 #include "en-sync-from-sb.h"
 #include "en-ecmp-nexthop.h"
@@ -161,6 +162,7 @@ static ENGINE_NODE(northd, CLEAR_TRACKED_DATA, SB_WRITE);
 static ENGINE_NODE(sync_from_sb, SB_WRITE);
 static ENGINE_NODE(sampling_app);
 static ENGINE_NODE(lflow, SB_WRITE);
+static ENGINE_NODE(syncer);
 static ENGINE_NODE(mac_binding_aging, SB_WRITE);
 static ENGINE_NODE(mac_binding_aging_waker);
 static ENGINE_NODE(northd_output);
@@ -428,6 +430,9 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_lflow, &en_sb_acl_id, NULL);
     engine_add_input(&en_lflow, &en_ic_learned_svc_monitors,
                      lflow_ic_learned_svc_mons_handler);
+
+
+    engine_add_input(&en_syncer, &en_lflow, NULL);
 
     engine_add_input(&en_sync_to_sb_addr_set, &en_northd, NULL);
     engine_add_input(&en_sync_to_sb_addr_set, &en_lr_stateful, NULL);

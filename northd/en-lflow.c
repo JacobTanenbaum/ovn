@@ -123,6 +123,7 @@ lflow_get_input_data(struct engine_node *node,
 enum engine_node_state
 en_lflow_run(struct engine_node *node, void *data)
 {
+    VLOG_ERR("KEYWORD: EN_LFLOW_RUN");
     const struct engine_context *eng_ctx = engine_get_context();
 
     struct lflow_input lflow_input;
@@ -202,9 +203,11 @@ lflow_lr_stateful_handler(struct engine_node *node, void *data)
                                           &lr_sful_data->trk_data,
                                           &lflow_input,
                                           lflow_data->lflow_table)) {
+        VLOG_ERR("KEYWORD lflow_lr_stateful_handler EN_UNHANDLED");
         return EN_UNHANDLED;
     }
 
+    VLOG_ERR("KEYWORD lflow_lr_stateful_handler EN_HANDLED_UPDATED");
     return EN_HANDLED_UPDATED;
 }
 
