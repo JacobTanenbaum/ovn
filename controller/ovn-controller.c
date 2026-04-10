@@ -7842,6 +7842,21 @@ main(int argc, char *argv[])
 
                     bool recompute_allowed = (ovnsb_idl_txn &&
                                               !ofctrl_has_backlog());
+
+                    if (runtime_data &&
+                            ((ovnsb_cond_seqno == ovnsb_expected_cond_seqno &&
+                              ovnsb_expected_cond_seqno != UINT_MAX) ||
+                              sb_monitor_all)) {
+
+                        struct local_datapath *ld;
+                        HMAP_FOR_EACH_SAFE (ld,
+                                            hmap_node,
+                                            &runtime_data->local_datapaths) {
+
+                            ld->is_sb_updated = true;
+                        }
+                    }
+
                     engine_run(recompute_allowed);
                     tracked_acl_ids = engine_get_data(&en_acl_id);
 
@@ -7973,6 +7988,21 @@ main(int argc, char *argv[])
                                  * a continuous reason for monitor updates. */
                                 daemon_started_recently_countdown();
                             }
+
+                            /* If sb_monitor_all is true we are monitoring all
+                             * the southbound database tables already and the
+                             *  needed data will be avalible already */
+                            if (sb_monitor_all) {
+                                struct local_datapath *ld;
+                                struct hmap *local_datapaths =
+                                    &runtime_data->local_datapaths;
+
+                                HMAP_FOR_EACH (ld,
+                                               hmap_node,
+                                               local_datapaths) {
+                                    ld->is_sb_updated = true;
+                                }
+                            }
                         }
                         /* If there is no new expected seqno we have finished
                          * loading all needed data from southbound. We then
@@ -8017,6 +8047,9 @@ main(int argc, char *argv[])
                                                     ovs_idl_loop.idl),
                                          sbrec_port_binding_table_get(
                                                     ovnsb_idl_loop.idl),
+                                         runtime_data ?
+                                               &runtime_data->local_datapaths
+                                               : NULL,
                                          !ovs_idl_txn,
                                          !ovnsb_idl_txn);
                     stopwatch_stop(IF_STATUS_MGR_UPDATE_STOPWATCH_NAME,

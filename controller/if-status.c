@@ -18,6 +18,7 @@
 #include "binding.h"
 #include "if-status.h"
 #include "lib/ofctrl-seqno.h"
+#include "local_data.h"
 #include "ovsport.h"
 #include "simap.h"
 
@@ -115,6 +116,7 @@ static const char *if_state_names[] = {
  * | |                 |                                                 | | |
  * | |                 | mgr_update(when sb is rw i.e. pb->chassis)      | | |
  * | |                 |            has been updated                     | | |
+ * | |                 |            and the sb has the required info     | | |
  * | | release_iface   | - request seqno                                 | | |
  * | |                 |                                                 | | |
  * | |                 V                                                 | | |
@@ -500,6 +502,7 @@ if_status_mgr_update(struct if_status_mgr *mgr,
                      const struct sbrec_chassis *chassis_rec,
                      const struct ovsrec_interface_table *iface_table,
                      const struct sbrec_port_binding_table *pb_table,
+                     const struct hmap *local_datapaths,
                      bool ovs_readonly,
                      bool sb_readonly)
 {
@@ -622,9 +625,23 @@ if_status_mgr_update(struct if_status_mgr *mgr,
              * in if_status_handle_claims or if_status_mgr_claim_iface
              */
             if (iface->is_vif) {
-                ovs_iface_set_state(mgr, iface, OIF_INSTALL_FLOWS);
-                iface->install_seqno = mgr->iface_seqno + 1;
-                new_ifaces = true;
+                if (local_datapaths) {
+                    const struct sbrec_port_binding *pb =
+                        sbrec_port_binding_table_get_for_uuid(pb_table,
+                                                              &iface->pb_uuid);
+                    ovs_assert(pb);
+                    struct local_datapath *ld =
+                        get_local_datapath(local_datapaths,
+                                           pb->datapath->tunnel_key);
+                    if (!ld) {
+                        continue;
+                    }
+                if (ld->is_sb_updated) {
+                    ovs_iface_set_state(mgr, iface, OIF_INSTALL_FLOWS);
+                    iface->install_seqno = mgr->iface_seqno + 1;
+                    new_ifaces = true;
+                }
+}
             } else {
                 ovs_iface_set_state(mgr, iface, OIF_MARK_UP);
             }

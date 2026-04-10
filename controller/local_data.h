@@ -53,6 +53,7 @@ struct local_datapath {
     const struct sbrec_datapath_binding *datapath;
     bool is_switch;
     bool is_transit_switch;
+    bool is_sb_updated;
 
     /* The localnet port in this datapath, if any (at most one is allowed). */
     const struct sbrec_port_binding *localnet_port;
