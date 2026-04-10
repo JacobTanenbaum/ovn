@@ -43,6 +43,8 @@ void if_status_mgr_update(struct if_status_mgr *, struct local_binding_data *,
                           const struct sbrec_chassis *chassis,
                           const struct ovsrec_interface_table *iface_table,
                           const struct sbrec_port_binding_table *pb_table,
+                          const struct hmap *local_datapaths,
+                          const struct sset *waiting_sb_update,
                           bool ovs_readonly,
                           bool sb_readonly);
 void if_status_mgr_run(struct if_status_mgr *mgr, struct local_binding_data *,

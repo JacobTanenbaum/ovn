@@ -1511,6 +1511,7 @@ en_runtime_data_clear_tracked_data(void *data_)
 }
 
 static void *
+
 en_runtime_data_init(struct engine_node *node OVS_UNUSED,
                      struct engine_arg *arg OVS_UNUSED)
 {
@@ -7596,6 +7597,8 @@ main(int argc, char *argv[])
     int ovs_txn_status = 1;
     bool sb_monitor_all = false;
     struct tracked_acl_ids *tracked_acl_ids = NULL;
+    struct sset waiting_sb_update;
+    sset_init(&waiting_sb_update);
     while (!exit_args.exiting) {
         ovsrcu_quiesce_end();
 
@@ -7842,6 +7845,7 @@ main(int argc, char *argv[])
 
                     bool recompute_allowed = (ovnsb_idl_txn &&
                                               !ofctrl_has_backlog());
+
                     engine_run(recompute_allowed);
                     tracked_acl_ids = engine_get_data(&en_acl_id);
 
@@ -7951,6 +7955,9 @@ main(int argc, char *argv[])
                                    sbrec_mirror_table_get(ovnsb_idl_loop.idl),
                                    br_int,
                                    &runtime_data->lbinding_data.bindings);
+                        if (ovnsb_cond_seqno == ovnsb_expected_cond_seqno) {
+                            sset_clear(&waiting_sb_update);
+                        }
                         /* Updating monitor conditions if runtime data or
                          * logical datapath goups changed. */
                         if (engine_node_changed(&en_runtime_data)
@@ -7972,6 +7979,23 @@ main(int argc, char *argv[])
                                  * This allows us to proceed even if there is
                                  * a continuous reason for monitor updates. */
                                 daemon_started_recently_countdown();
+                            }
+
+                            if (!sb_monitor_all && runtime_data) {
+                                struct hmap *tracked_dp_bindings =
+                                    &runtime_data->tracked_dp_bindings;
+                                struct tracked_datapath *tdp;
+                                HMAP_FOR_EACH_SAFE (tdp,
+                                                    node,
+                                                    tracked_dp_bindings) {
+                                    char *uuid =
+                                        uuid_to_string(&tdp->dp->header_.uuid);
+                                    if (tdp->tracked_type ==
+                                        TRACKED_RESOURCE_NEW) {
+                                        sset_add(&waiting_sb_update, uuid);
+                                    }
+                                    free(uuid);
+                                }
                             }
                         }
                         /* If there is no new expected seqno we have finished
@@ -8017,6 +8041,10 @@ main(int argc, char *argv[])
                                                     ovs_idl_loop.idl),
                                          sbrec_port_binding_table_get(
                                                     ovnsb_idl_loop.idl),
+                                         runtime_data ?
+                                               &runtime_data->local_datapaths
+                                               : NULL,
+                                         &waiting_sb_update,
                                          !ovs_idl_txn,
                                          !ovnsb_idl_txn);
                     stopwatch_stop(IF_STATUS_MGR_UPDATE_STOPWATCH_NAME,

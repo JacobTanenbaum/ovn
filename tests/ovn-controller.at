@@ -3944,3 +3944,69 @@ OVN_CLEANUP([hv1], [hv2
 /already has encap ip.*cannot duplicate on/d])
 AT_CLEANUP
 ])
+
+OVN_FOR_EACH_NORTHD([
+AT_SETUP([ovn-installed])
+ovn_start
+
+net_add n1
+sim_add hv1
+
+as hv1
+ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.1
+ovn-appctl vlog/set dbg
+ovs-vsctl add-port br-int vif1 -- \
+    set Interface vif1 external-ids:iface-id=lsp1
+
+check ovn-nbctl ls-add ls1
+sleep_controller hv1
+check ovn-nbctl --wait=sb lsp-add ls1 lsp1 -- \
+                          lsp-set-addresses lsp1 "f0:00:00:00:00:01 10.0.0.1"
+
+sleep_sb
+wake_up_controller hv1
+
+# Wait for pflow for lsp1
+OVS_WAIT_UNTIL([
+    ofport=$(as hv1 ovs-vsctl --bare --columns ofport find Interface name=vif1)
+    echo "vif1 port=$ofport"
+    test -n "$ofport" && test 1 -le $(as hv1 ovs-ofctl dump-flows br-int | grep -c in_port=$ofport)
+])
+
+# If ovn-installed in ovs, all flows should be installed.
+# In that case, there should be at least one flow with lsp1 address.
+OVS_WAIT_UNTIL([
+    ovn_installed=$(as hv1 ovs-vsctl get Interface vif1 external_ids:ovn-installed)
+    echo $ovn_installed
+    flow_count=$(as hv1 ovs-ofctl dump-flows br-int | grep -Fc "10.0.0.1")
+    # for the monitor-all=true case the flow gets installed because ovn-controller is monitoring all
+    # tables in OVN_SOUTHBOUND.
+    if test -n "$ovn_installed"; then
+        as hv1 ovs-ofctl dump-flows br-int > output
+        test $flow_count -ge 1
+    else
+        true
+    fi
+])
+
+wake_up_sb
+# After the southbound db has woken up and can send the update to the
+# ovn-controller not monitoring all tables in the southbound db it
+# should be able to install the interface.
+OVS_WAIT_UNTIL([
+    ovn_installed=$(as hv1 ovs-vsctl get Interface vif1 external_ids:ovn-installed)
+    flow_count=$(as hv1 ovs-ofctl dump-flows br-int | grep -Fc "10.0.0.1")
+    echo "installed=$ovn_installed, count=$flow_count"
+    if test -n "$ovn_installed"; then
+        as hv1 ovs-ofctl dump-flows br-int > output
+        test $flow_count -ge 1
+    else
+        false
+    fi
+])
+wait_for_ports_up
+
+OVN_CLEANUP([hv1])
+AT_CLEANUP
+])
