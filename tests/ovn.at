@@ -3497,6 +3497,7 @@ for i in 1 2; do
     done
 done
 
+echo "HERE"
 for hv in 1 2; do
     as hv-$hv
     for ls in 1 2; do
@@ -6150,17 +6151,20 @@ check ovn-nbctl lrp-add R2 ls2 $rp_ls2_mac 172.16.1.1/24
 
 check ovn-nbctl lsp-add ls2 rp-ls2 -- set Logical_Switch_Port rp-ls2 type=router \
   options:router-port=ls2 addresses=\"$rp_ls2_mac\"
-
+echo "HERE 0"
 # Connect R1 to R2
 check ovn-nbctl lrp-add R1 R1_R2 00:00:00:02:03:04 20.0.0.1/24 peer=R2_R1
 check ovn-nbctl lrp-add R2 R2_R1 00:00:00:02:03:05 20.0.0.2/24 peer=R1_R2
+echo "HERE 1"
 
 check ovn-nbctl lr-route-add R1 "0.0.0.0/0" 20.0.0.2
 check ovn-nbctl lr-route-add R2 "0.0.0.0/0" 20.0.0.1
+echo "HERE 2"
 
 # Create logical port ls1-lp1 in ls1
 check ovn-nbctl lsp-add ls1 ls1-lp1 \
 -- lsp-set-addresses ls1-lp1 "$ls1_lp1_mac $ls1_lp1_ip"
+echo "HERE 3"
 
 # Create logical port ls2-lp1 in ls2
 check ovn-nbctl lsp-add ls2 ls2-lp1 \
@@ -6169,7 +6173,9 @@ check ovn-nbctl lsp-add ls2 ls2-lp1 \
 # Create two hypervisor and create OVS ports corresponding to logical ports.
 net_add n1
 
+echo "HERE 4"
 sim_add hv1
+echo "HERE 5"
 as hv1
 ovs-vsctl add-br br-phys
 ovn_attach n1 br-phys 192.168.0.1
@@ -6178,8 +6184,10 @@ ovs-vsctl -- add-port br-int hv1-vif1 -- \
     options:tx_pcap=hv1/vif1-tx.pcap \
     options:rxq_pcap=hv1/vif1-rx.pcap \
     ofport-request=1
+echo "HERE 6"
 
 sim_add hv2
+echo "HERE 7"   
 as hv2
 ovs-vsctl add-br br-phys
 ovn_attach n1 br-phys 192.168.0.2
@@ -6194,9 +6202,12 @@ ovs-vsctl -- add-port br-int hv2-vif1 -- \
 # packets for ARP resolution (native tunneling doesn't queue packets
 # for ARP resolution).
 OVN_POPULATE_ARP
+echo "HERE 8"
 
 # Allow some time for ovn-northd and ovn-controller to catch up.
+echo "HERE 9"
 wait_for_ports_up
+echo "HERE 10"
 check ovn-nbctl --wait=hv sync
 
 # Packet to send.
@@ -6240,6 +6251,7 @@ AT_CHECK([ovn-sbctl dump-flows | grep lr_in_arp_resolve | \
 grep "reg0 == 172.16.1.2" | wc -l], [0], [1
 ])
 
+echo "HERE WHAT"
 # Disable the ls2-lp1 port.
 check ovn-nbctl --wait=hv set logical_switch_port ls2-lp1 enabled=false
 

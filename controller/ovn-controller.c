@@ -1511,6 +1511,7 @@ en_runtime_data_clear_tracked_data(void *data_)
 }
 
 static void *
+
 en_runtime_data_init(struct engine_node *node OVS_UNUSED,
                      struct engine_arg *arg OVS_UNUSED)
 {
@@ -7843,20 +7844,6 @@ main(int argc, char *argv[])
                     bool recompute_allowed = (ovnsb_idl_txn &&
                                               !ofctrl_has_backlog());
 
-                    if (runtime_data &&
-                            ((ovnsb_cond_seqno == ovnsb_expected_cond_seqno &&
-                              ovnsb_expected_cond_seqno != UINT_MAX) ||
-                              sb_monitor_all)) {
-
-                        struct local_datapath *ld;
-                        HMAP_FOR_EACH_SAFE (ld,
-                                            hmap_node,
-                                            &runtime_data->local_datapaths) {
-
-                            ld->is_sb_updated = true;
-                        }
-                    }
-
                     engine_run(recompute_allowed);
                     tracked_acl_ids = engine_get_data(&en_acl_id);
 
@@ -7989,21 +7976,31 @@ main(int argc, char *argv[])
                                 daemon_started_recently_countdown();
                             }
 
-                            /* If sb_monitor_all is true we are monitoring all
-                             * the southbound database tables already and the
-                             *  needed data will be avalible already */
-                            if (sb_monitor_all) {
-                                struct local_datapath *ld;
-                                struct hmap *local_datapaths =
-                                    &runtime_data->local_datapaths;
+                        if (had_all_data && runtime_data) {
+                            struct hmap tracked_dps = 
+                                runtime_data->tracked_dp_bindings;
+                            struct tracked_datapath *tdp;
+                            HMAP_FOR_EACH (tdp, node, &tracked_dps) {
+                                int type = sb_monitor_all ?  
+                                    TRACKED_RESOURCE_NEW :
+                                    TRACKED_RESOURCE_UPDATED;
+                                if (tdp->tracked_type == type) {
+                                    int64_t tunnel_key = tdp->dp->tunnel_key;
+                                    struct hmap local_datapaths =
+                                        runtime_data->local_datapaths;
 
-                                HMAP_FOR_EACH (ld,
-                                               hmap_node,
-                                               local_datapaths) {
-                                    ld->is_sb_updated = true;
+                                    struct local_datapath *ld = 
+                                        get_local_datapath(&local_datapaths, 
+                                                           tunnel_key);
+                                    if (ld && !ld->is_sb_updated) {
+                                        VLOG_ERR("KEYWORD DO I GET HERE");
+                                        ld->is_sb_updated = true;
+                                    }
                                 }
                             }
                         }
+                        }
+
                         /* If there is no new expected seqno we have finished
                          * loading all needed data from southbound. We then
                          * need to run one more time since we might behave
