@@ -4129,6 +4129,7 @@ for i in 1 2; do
                                   options:tx_pcap=vif$i-tx.pcap \
                                   options:rxq_pcap=vif$i-rx.pcap \
                                   ofport-request=$i
+    echo "HERE"
     wait_for_ports_up lsp$i
 
     # Patch port might be created after ports are reported up
@@ -6120,6 +6121,7 @@ AT_CLEANUP
 OVN_FOR_EACH_NORTHD([
 AT_SETUP([2 HVs, 2 LS, 1 lport/LS, 2 peer LRs])
 ovn_start
+
 
 # Logical network:
 # Two LRs - R1 and R2 that are connected to each other as peers in 20.0.0.0/24
@@ -15411,8 +15413,10 @@ net_add n1
 
 sim_add hv1
 as hv1
+echo "HERE hv1 "
 check ovs-vsctl add-br br-phys
 ovn_attach n1 br-phys 192.168.0.11
+echo "THERE"
 
 sim_add hv2
 as hv2
@@ -15444,16 +15448,22 @@ wait_column "" Port_Binding requested_additional_chassis logical_port=lsp0
 check ovn-nbctl lsp-set-options lsp0 \
     requested-chassis=hv1,hv2
 
+echo "WHAT AM I DOING"
 wait_column "$hv1_uuid" Port_Binding chassis logical_port=lsp0
 wait_column "$hv1_uuid" Port_Binding requested_chassis logical_port=lsp0
 wait_column "$hv2_uuid" Port_Binding additional_chassis logical_port=lsp0
 wait_column "$hv2_uuid" Port_Binding requested_additional_chassis logical_port=lsp0
 
 # Check ovn-installed updated for both chassis
+echo "HERE"
 wait_for_ports_up
+echo "A"
 
 for hv in hv1 hv2; do
+    echo "HERE " $hv
+    as $hv ovs-vsctl list interface lsp0
     OVS_WAIT_UNTIL([test `as $hv ovs-vsctl get Interface lsp0 external_ids:ovn-installed` = '"true"'])
+    as $hv ovs-vsctl get Interface lsp0 external_ids:ovn-installed
 done
 
 # Check that setting iface:encap-ip populates Port_Binding:additional_encap
@@ -15483,6 +15493,7 @@ wait_column "" Port_Binding requested_additional_chassis logical_port=lsp0
 
 # Check ovn-installed updated for main chassis and removed from additional chassis
 wait_for_ports_up
+echo "B"
 OVS_WAIT_UNTIL([test `as hv2 ovs-vsctl get Interface lsp0 external_ids:ovn-installed` = '"true"'])
 OVS_WAIT_UNTIL([test x`as hv1 ovs-vsctl get Interface lsp0 external_ids:ovn-installed` = x])
 
@@ -18325,6 +18336,7 @@ ovs-vsctl -- add-port br-int vif2 -- \
 ovs-vsctl set open . external-ids:ovn-bridge-mappings=public:br-phys
 
 # Allow some time for ovn-northd and ovn-controller to catch up.
+echo "HERE"
 wait_for_ports_up
 check ovn-nbctl --wait=hv sync
 ovn-sbctl dump-flows > sbflows

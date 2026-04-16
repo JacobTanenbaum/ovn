@@ -7671,6 +7671,7 @@ main(int argc, char *argv[])
             .ovnsb_idl_txn = ovnsb_idl_txn,
             .client_ctx = &ctrl_engine_ctx
         };
+        VLOG_INFO("KEYWORD: SB_READ_ONLY? %s", ovnsb_idl_txn ? "true": "false");
 
         engine_set_context(&eng_ctx);
 
@@ -7976,14 +7977,48 @@ main(int argc, char *argv[])
                                 daemon_started_recently_countdown();
                             }
 
-                        if (had_all_data && runtime_data) {
+//                          VLOG_ERR("KEYWORD: CHASSIS->NAME = %s", chassis->name);
+//                        VLOG_ERR("KEYWORD: DO I GET HERE");
+//                        VLOG_ERR("KEYWORD: condition_changed ? %s", condition_changed ? "true": "false");
+//                        VLOG_ERR("KEYWORD: had_all_data? %s", had_all_data ? "true":"false");
+                        if (runtime_data) {
                             struct hmap tracked_dps = 
                                 runtime_data->tracked_dp_bindings;
                             struct tracked_datapath *tdp;
+                            VLOG_INFO("KEYWORD: HMAP_COUNT(blah) = %"PRIu64" !had_all_data", hmap_count(&tracked_dps));
                             HMAP_FOR_EACH (tdp, node, &tracked_dps) {
                                 int type = sb_monitor_all ?  
                                     TRACKED_RESOURCE_NEW :
                                     TRACKED_RESOURCE_UPDATED;
+                             VLOG_ERR("KEYWORD: UUID = "UUID_FMT" - type = %d !had_all_data", UUID_ARGS(&tdp->dp->header_.uuid), tdp->tracked_type);
+                                if (tdp->tracked_type == type || sb_monitor_all) {
+                                    int64_t tunnel_key = tdp->dp->tunnel_key;
+                                    struct hmap local_datapaths =
+                                        runtime_data->local_datapaths;
+
+                                    struct local_datapath *ld = 
+                                        get_local_datapath(&local_datapaths, 
+                                                           tunnel_key);
+                                    if (ld && !ld->is_sb_updated) {
+//                                        VLOG_ERR("KEYWORD HIIIIT");
+                                        VLOG_INFO("KEYWORD: setting to sb_udpated had_all_data = %s", had_all_data ? "true": "false");
+                                        ld->is_sb_updated = true;
+                                    }
+                                }
+                            }
+
+                        }
+/*
+                        if (had_all_data && runtime_data) {
+                            struct hmap tracked_dps = 
+                                runtime_data->tracked_dp_bindings;
+                            struct tracked_datapath *tdp;
+                            VLOG_ERR("KEYWORD: HMAP_COUNT(blah) = %"PRIu64"", hmap_count(&tracked_dps));
+                            HMAP_FOR_EACH (tdp, node, &tracked_dps) {
+                                int type = sb_monitor_all ?  
+                                    TRACKED_RESOURCE_NEW :
+                                    TRACKED_RESOURCE_UPDATED;
+                                VLOG_ERR("KEYWORD: UUID = "UUID_FMT" - type = %d", UUID_ARGS(&tdp->dp->header_.uuid), tdp->tracked_type);
                                 if (tdp->tracked_type == type) {
                                     int64_t tunnel_key = tdp->dp->tunnel_key;
                                     struct hmap local_datapaths =
@@ -7993,12 +8028,13 @@ main(int argc, char *argv[])
                                         get_local_datapath(&local_datapaths, 
                                                            tunnel_key);
                                     if (ld && !ld->is_sb_updated) {
-                                        VLOG_ERR("KEYWORD DO I GET HERE");
+                                        VLOG_ERR("KEYWORD HIIIIT");
                                         ld->is_sb_updated = true;
                                     }
                                 }
                             }
                         }
+*/
                         }
 
                         /* If there is no new expected seqno we have finished

@@ -264,6 +264,7 @@ EOF
     net_attach $net $bridge || return $?
 
     ovn_sim_setvars $sandbox
+    echo "WHAT AM I DOING HERE!!!!"
 
     ovs-appctl netdev-dummy/ip4addr $bridge $ip/$masklen >/dev/null
     ovs-appctl ovs/route/add $ip/$masklen $bridge > /dev/null
