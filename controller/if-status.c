@@ -522,7 +522,7 @@ if_status_mgr_update(struct if_status_mgr *mgr,
                      const struct ovsrec_interface_table *iface_table,
                      const struct sbrec_port_binding_table *pb_table,
                      const struct hmap *local_datapaths,
-                     const struct sset *waiting_sb_update,
+                     const struct uuidset *waiting_sb_update,
                      bool ovs_readonly,
                      bool sb_readonly)
 {
@@ -675,13 +675,11 @@ if_status_mgr_update(struct if_status_mgr *mgr,
                 if (!ld) {
                     continue;
                 }
-                char *uuid = uuid_to_string(&ld->datapath->header_.uuid);
-                if (!sset_contains(waiting_sb_update, uuid)) {
+                if (!uuidset_find(waiting_sb_update, &ld->datapath->header_.uuid)) {
                     ovs_iface_set_state(mgr, iface, OIF_INSTALL_FLOWS);
                     iface->install_seqno = mgr->iface_seqno + 1;
                     new_ifaces = true;
                 }
-                free(uuid);
             }
         }
     }

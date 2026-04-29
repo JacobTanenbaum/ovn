@@ -573,6 +573,7 @@ engine_run_node(struct engine_node *node, bool recompute_allowed)
     }
 
     if (engine_force_recompute) {
+//        VLOG_ERR("KEYWORD: FORCED RECOMPUTE");
         engine_recompute(node, recompute_allowed, "forced");
         return;
     }
@@ -583,11 +584,18 @@ engine_run_node(struct engine_node *node, bool recompute_allowed)
     bool need_compute = false;
     for (size_t i = 0; i < node->n_inputs; i++) {
         struct engine_node *input_node = node->inputs[i].node;
+        if (!strcmp(node->name, "datapaths_updated")) {
+//            VLOG_ERR("\t\t\tKEYWORD:  datapaths_updated input node %s returned %d", input_node->name, input_node->state);
+        }
         if (input_node->state == EN_UPDATED) {
             need_compute = true;
+//            if(!strcmp(node->name, "datapaths_updated")) {
+  //              VLOG_ERR("KEYWORD: should be computing %s because input %s", node->name, input_node->name);
+    //        }
 
             /* Trigger a recompute if we don't have a change handler. */
             if (!node->inputs[i].change_handler) {
+//                VLOG_ERR("\t\tKEYWORD: node %s triggered recompute?", node->name);
                 engine_recompute(node, recompute_allowed,
                                  "missing handler for input %s",
                                  input_node->name);
@@ -628,17 +636,26 @@ engine_run(bool recompute_allowed)
 
     engine_run_canceled = false;
     struct engine_node *node;
+//    VLOG_ERR("KEYWORD: ENGINE_RUN");
     VECTOR_FOR_EACH (&engine_nodes, node) {
+//        if (!strcmp("sb_cond_seqno", node->name) || !strcmp("datapaths_updated", node->name)) {
+//        VLOG_ERR("\tKEYWORD: node->name: %s", node->name);
+//        }
         ovsdb_idl_txn_assert_read_only(sb_txn, !node->sb_write);
         engine_run_node(node, recompute_allowed);
         ovsdb_idl_txn_assert_read_only(sb_txn, false);
 
+        if (!strcmp("sb_cond_seqno", node->name) || !strcmp("datapaths_updated", node->name)) { 
+//            VLOG_ERR("\tKEYWORD: node->name: %s - returned %d", node->name, node->state);
+        }
         if (node->state == EN_CANCELED) {
             node->stats.cancel++;
             engine_run_canceled = true;
+//            VLOG_ERR("KEYWORD: ENGINE_RUN - END CANCELED");
             return;
         }
     }
+//    VLOG_ERR("KEYWORD: ENGINE_RUN - END");
 }
 
 bool

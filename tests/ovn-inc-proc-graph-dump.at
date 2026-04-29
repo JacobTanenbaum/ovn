@@ -478,6 +478,10 @@ digraph "Incremental-Processing-Engine" {
 	SB_acl_id [[style=filled, shape=box, fillcolor=white, label="SB_acl_id"]];
 	acl_id [[style=filled, shape=box, fillcolor=white, label="acl_id"]];
 	SB_acl_id -> acl_id [[label=""]];
+	sb_cond_seqno [[style=filled, shape=box, fillcolor=white, label="sb_cond_seqno"]];
+	datapaths_updated [[style=filled, shape=box, fillcolor=white, label="datapaths_updated"]];
+	sb_cond_seqno -> datapaths_updated [[label="datapaths_update_sb_cond_handler"]];
+	runtime_data -> datapaths_updated [[label="new_datapaths_handler"]];
 	controller_output [[style=filled, shape=box, fillcolor=white, label="controller_output"]];
 	dns_cache -> controller_output [[label=""]];
 	lflow_output -> controller_output [[label="controller_output_lflow_output_handler"]];
@@ -487,6 +491,7 @@ digraph "Incremental-Processing-Engine" {
 	route_exchange -> controller_output [[label="controller_output_route_exchange_handler"]];
 	garp_rarp -> controller_output [[label="controller_output_garp_rarp_handler"]];
 	acl_id -> controller_output [[label="controller_output_acl_id_handler"]];
+	datapaths_updated -> controller_output [[label=""]];
 }
 ])
 AT_CLEANUP
