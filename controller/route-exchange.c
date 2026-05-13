@@ -243,11 +243,20 @@ static int route_exchange_nl_status;
         }                                       \
     } while (0)
 
+struct advertized_routes_for_table_id_entry{
+    struct hmap_node node;
+
+    struct sbrec_datapath_binding *db;
+    uint32_t table_id;
+    struct hmap routes;
+};
+
 void
 route_exchange_run(const struct route_exchange_ctx_in *r_ctx_in,
                    struct route_exchange_ctx_out *r_ctx_out)
 {
     struct hmap table_ids = HMAP_INITIALIZER(&table_ids);
+    struct hmap advertized_routes = HMAP_INITIALIZER(&advertized_routes);
     struct sset old_maintained_vrfs = SSET_INITIALIZER(&old_maintained_vrfs);
     sset_swap(&_maintained_vrfs, &old_maintained_vrfs);
     struct hmap old_maintained_route_table =
@@ -259,14 +268,37 @@ route_exchange_run(const struct route_exchange_ctx_in *r_ctx_in,
     const struct advertise_datapath_entry *ad;
     HMAP_FOR_EACH (ad, node, r_ctx_in->announce_routes) {
         uint32_t table_id = route_get_table_id(ad->db);
-
-        bool valid = TABLE_ID_VALID(table_id);
-        if (!valid || !ovn_add_tnlid(&table_ids, table_id)) {
+        if (!TABLE_ID_VALID(table_id)) {
             VLOG_WARN_RL(&rl, "Unable to sync routes for datapath "UUID_FMT": "
-                         "%s table id: %"PRIu32,
-                         UUID_ARGS(&ad->db->header_.uuid),
-                         !valid ? "invalid" : "duplicate", table_id);
+                         "invalid table id: %"PRIu32,
+                         UUID_ARGS(&ad->db->header_.uuid), table_id);
             continue;
+        }
+        struct advertized_routes_for_table_id_entry *entry;
+        uint32_t hash = maintained_route_table_hash(table_id);
+        HMAP_FOR_EACH_WITH_HASH (entry, node, hash, &advertized_routes) {
+            if (entry && entry->table_id == table_id && !hmap_is_empty(&entry->routes)) {
+                VLOG_ERR("KEYWORD: CHANGE THIS hmap_count(&ad->routes) = %"PRIu64" hmap_count(&entry->routes) = %"PRIu64"", hmap_count(&ad->routes), hmap_count(&entry->routes));
+            }
+        }
+        if (entry == NULL) {
+            entry = xmalloc(sizeof *entry);
+            *entry = (struct advertized_routes_for_table_id_entry) {
+                .table_id = table_id,
+                .routes = HMAP_INITIALIZER(&entry->routes),
+            };
+            hmap_insert(&advertized_routes, &entry->node, hash);
+        }
+        struct advertise_route_entry *are;
+        HMAP_FOR_EACH(are, node, &ad->routes) {
+            struct advertise_route_entry *copy = xmalloc(sizeof(*copy));
+            *copy = (struct advertise_route_entry) {
+                .addr = are->addr,
+                .plen = are->plen,
+                .priority = are->priority,
+                .nexthop = are->nexthop,
+            };
+            hmap_insert(&entry->routes, &copy->node, hmap_node_hash(&are->node));
         }
 
         if (ad->maintain_vrf) {
@@ -295,7 +327,7 @@ route_exchange_run(const struct route_exchange_ctx_in *r_ctx_in,
         struct vector received_routes =
             VECTOR_EMPTY_INITIALIZER(struct re_nl_received_route_node);
 
-        error = re_nl_sync_routes(table_id, &ad->routes,
+        error = re_nl_sync_routes(table_id, &entry->routes,
                                   &received_routes, ad->db);
         SET_ROUTE_EXCHANGE_NL_STATUS(error);
 
@@ -340,6 +372,17 @@ route_exchange_run(const struct route_exchange_ctx_in *r_ctx_in,
     }
     sset_destroy(&old_maintained_vrfs);
     ovn_destroy_tnlids(&table_ids);
+    struct advertized_routes_for_table_id_entry *arte;
+    HMAP_FOR_EACH_POP (arte, node, &advertized_routes) {
+        struct advertise_route_entry *ade;
+        HMAP_FOR_EACH_POP (ade, node, &arte->routes) {
+            free(ade);
+        }
+        hmap_destroy(&arte->routes);
+        free(arte);
+        
+    }
+    hmap_destroy(&advertized_routes);
 }
 
 void
