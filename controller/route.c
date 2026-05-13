@@ -172,7 +172,7 @@ advertise_datapath_cleanup(struct advertise_datapath_entry *ad)
     free(ad);
 }
 
-static struct advertise_datapath_entry*
+struct advertise_datapath_entry*
 advertise_datapath_find(const struct hmap *datapaths,
                         const struct sbrec_datapath_binding *db)
 {

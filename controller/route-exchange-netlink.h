@@ -59,6 +59,8 @@ void re_route_format(struct ds *, uint32_t table_id,
                      const struct in6_addr *dst, unsigned int plen,
                      const struct in6_addr *nexthop, int err);
 
+void re_nl_get_learned_routes(uint32_t table_id,
+                              struct vector *learned_routes);
 int re_nl_sync_routes(uint32_t table_id, const struct hmap *routes,
                       struct vector *learned_routes);
 

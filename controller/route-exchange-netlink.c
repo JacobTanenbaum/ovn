@@ -318,6 +318,15 @@ re_nl_encode_nexthop(struct ofpbuf *request, bool dst_is_ipv4,
     }
 }
 
+void
+re_nl_get_learned_routes(uint32_t table_id, struct vector *learned_routes)
+{
+    struct route_msg_handle_data data = {
+        .learned_routes = learned_routes,
+    };
+    route_table_dump_one_table(table_id, handle_route_msg, &data);
+}
+
 int
 re_nl_sync_routes(uint32_t table_id, const struct hmap *routes,
                   struct vector *learned_routes)
