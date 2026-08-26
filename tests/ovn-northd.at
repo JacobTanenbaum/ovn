@@ -13224,17 +13224,7 @@ check ovn-nbctl --wait=sb set load_balancer lb1 options:bar=foo
 check_engine_stats lflow norecompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 
-# Clear the SB:Logical_Flow.logical_dp_groups column of all the
-# logical flows and then modify the NB:Load_balancer.  ovn-northd
-# should resync the logical flows.
-for l in $(ovn-sbctl --bare --columns _uuid list logical_flow)
-do
-    check ovn-sbctl clear logical_flow $l logical_dp_group
-done
-
-check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 check ovn-nbctl --wait=sb set load_balancer lb1 options:foo=bar
-check_engine_stats lflow recompute nocompute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 
 lb_lflow_uuid=$(fetch_column Logical_flow _uuid match='"ct.new && ip4.dst == 10.0.0.10 && reg1[[16..23]] == 6 && reg1[[0..15]] == 80"')
@@ -13403,16 +13393,7 @@ AT_CHECK([echo $dpgrp_dps | grep $sw3_uuid], [0], [ignore])
 AT_CHECK([echo $dpgrp_dps | grep $sw4_uuid], [0], [ignore])
 AT_CHECK([echo $dpgrp_dps | grep $sw5_uuid], [0], [ignore])
 
-# Clear the SB:Logical_Flow.logical_dp_groups column of all the
-# logical flows and then modify the NB:Load_balancer.  ovn-northd
-# should resync the logical flows.
-for l in $(ovn-sbctl --bare --columns _uuid list logical_flow)
-do
-    check ovn-sbctl clear logical_flow $l logical_dp_group
-done
-
 check ovn-nbctl --wait=sb set load_balancer lb2 vips='{"10.0.0.10:80"="10.0.0.3:80,10.0.0.4:80"}'
-check_engine_stats lflow recompute compute
 CHECK_NO_CHANGE_AFTER_RECOMPUTE
 
 lb_lflow_uuid=$(fetch_column Logical_flow _uuid match='"ct.new && ip4.dst == 10.0.0.10 && reg1[[16..23]] == 6 && reg1[[0..15]] == 80"')

@@ -7,12 +7,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "lib/hmapx.h"
 #include "lib/inc-proc-eng.h"
 
 struct lflow_table;
 
 struct lflow_data {
     struct lflow_table *lflow_table;
+    struct hmapx dirty_lflow_refs;
+    bool needs_full_sync;
 };
 
 enum engine_node_state en_lflow_run(struct engine_node *node, void *data);

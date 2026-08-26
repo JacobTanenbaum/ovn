@@ -37,6 +37,7 @@
 #include "en-multicast.h"
 #include "en-northd.h"
 #include "en-lflow.h"
+#include "en-dp-group-resolved.h"
 #include "en-northd-output.h"
 #include "en-meters.h"
 #include "en-sampling-app.h"
@@ -160,7 +161,8 @@ enum sb_engine_node {
 static ENGINE_NODE(northd, CLEAR_TRACKED_DATA, SB_WRITE);
 static ENGINE_NODE(sync_from_sb, SB_WRITE);
 static ENGINE_NODE(sampling_app);
-static ENGINE_NODE(lflow, SB_WRITE);
+static ENGINE_NODE(lflow);
+static ENGINE_NODE(dp_group_resolved, SB_WRITE);
 static ENGINE_NODE(mac_binding_aging, SB_WRITE);
 static ENGINE_NODE(mac_binding_aging_waker);
 static ENGINE_NODE(northd_output);
@@ -399,9 +401,7 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_multicast_igmp, &en_sb_igmp_group, NULL);
 
     engine_add_input(&en_lflow, &en_sync_meters, NULL);
-    engine_add_input(&en_lflow, &en_sb_logical_flow, NULL);
     engine_add_input(&en_lflow, &en_sb_multicast_group, NULL);
-    engine_add_input(&en_lflow, &en_sb_logical_dp_group, NULL);
     engine_add_input(&en_lflow, &en_bfd_sync, NULL);
     engine_add_input(&en_lflow, &en_route_policies, NULL);
     /* Route changes are propagated to en_lflow through the en_group_ecmp_route
@@ -435,6 +435,15 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_lflow, &en_sb_acl_id, NULL);
     engine_add_input(&en_lflow, &en_ic_learned_svc_monitors,
                      lflow_ic_learned_svc_mons_handler);
+
+    engine_add_input(&en_dp_group_resolved, &en_lflow,
+                     dp_group_resolved_lflow_handler);
+    engine_add_input(&en_dp_group_resolved, &en_sb_logical_flow, NULL);
+    engine_add_input(&en_dp_group_resolved, &en_sb_logical_dp_group, NULL);
+    engine_add_input(&en_dp_group_resolved, &en_datapath_sync,
+                     engine_noop_handler);
+    engine_add_input(&en_dp_group_resolved, &en_global_config,
+                     engine_noop_handler);
 
     engine_add_input(&en_sync_to_sb_addr_set, &en_northd, NULL);
     engine_add_input(&en_sync_to_sb_addr_set, &en_lr_stateful, NULL);
@@ -490,8 +499,8 @@ void inc_proc_northd_init(struct ovsdb_idl_loop *nb,
     engine_add_input(&en_northd_output, &en_sync_from_sb, NULL);
     engine_add_input(&en_northd_output, &en_sync_to_sb,
                      northd_output_sync_to_sb_handler);
-    engine_add_input(&en_northd_output, &en_lflow,
-                     northd_output_lflow_handler);
+    engine_add_input(&en_northd_output, &en_dp_group_resolved,
+                     northd_output_dp_group_resolved_handler);
     engine_add_input(&en_northd_output, &en_mac_binding_aging,
                      northd_output_mac_binding_aging_handler);
     engine_add_input(&en_northd_output, &en_fdb_aging,

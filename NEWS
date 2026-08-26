@@ -1,5 +1,10 @@
 Post v26.09.09
 --------------
+   - Split ovn-northd's en_lflow engine node into a compute-only en_lflow
+     node and a new en_dp_group_resolved node that handles datapath-group
+     resolution and all SB database writes.  This separation makes en_lflow
+     independent of the SB database, preparing for future incremental
+     processing improvements.
 
 OVN v26.09.0 - xxx xx xxxx
 --------------------------
