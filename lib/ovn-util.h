@@ -640,6 +640,7 @@ dynamic_bitmap_or(struct dynamic_bitmap *db,
 {
     ovs_assert(db->capacity == n);
     bitmap_or(db->map, arg, n);
+    db->n_elems = bitmap_count1(db->map, db->capacity);
 }
 
 static inline unsigned long *

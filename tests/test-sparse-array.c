@@ -189,13 +189,61 @@ test_remove_replace(struct ovs_cmdl_context *ctx OVS_UNUSED)
 }
 
 static void
+test_dynamic_bitmap_or(struct ovs_cmdl_context *ctx OVS_UNUSED)
+{
+    struct dynamic_bitmap a, b;
+
+    dynamic_bitmap_alloc(&a, 8);
+    dynamic_bitmap_alloc(&b, 8);
+
+    /* Set bits 1, 3 in 'a' through the tracked API. */
+    dynamic_bitmap_set1(&a, 1);
+    dynamic_bitmap_set1(&a, 3);
+    ovs_assert(a.n_elems == 2);
+
+    /* Set bits 3, 5, 7 in 'b'. */
+    dynamic_bitmap_set1(&b, 3);
+    dynamic_bitmap_set1(&b, 5);
+    dynamic_bitmap_set1(&b, 7);
+    ovs_assert(b.n_elems == 3);
+
+    /* OR 'b' into 'a'.  Result should be {1, 3, 5, 7} = 4 elements.
+     * Before the fix, n_elems stayed at 2 because dynamic_bitmap_or
+     * did not recount. */
+    dynamic_bitmap_or(&a, b.map, b.capacity);
+    ovs_assert(a.n_elems == 4);
+    ovs_assert(dynamic_bitmap_is_set(&a, 1));
+    ovs_assert(dynamic_bitmap_is_set(&a, 3));
+    ovs_assert(dynamic_bitmap_is_set(&a, 5));
+    ovs_assert(dynamic_bitmap_is_set(&a, 7));
+    ovs_assert(!dynamic_bitmap_is_set(&a, 0));
+    ovs_assert(!dynamic_bitmap_is_set(&a, 2));
+
+    /* Clearing a bit that was added by the OR must not underflow
+     * n_elems.  Before the fix, n_elems was 2 here so clearing two
+     * OR-added bits would wrap to SIZE_MAX. */
+    dynamic_bitmap_set0(&a, 5);
+    ovs_assert(a.n_elems == 3);
+    dynamic_bitmap_set0(&a, 7);
+    ovs_assert(a.n_elems == 2);
+    dynamic_bitmap_set0(&a, 1);
+    ovs_assert(a.n_elems == 1);
+    dynamic_bitmap_set0(&a, 3);
+    ovs_assert(a.n_elems == 0);
+
+    dynamic_bitmap_free(&a);
+    dynamic_bitmap_free(&b);
+}
+
+static void
 test_sparse_array_main(int argc OVS_UNUSED, char *argv[] OVS_UNUSED)
 {
     ovn_set_program_name(argv[0]);
     static const struct ovs_cmdl_command commands[] = {
-        {"add",            NULL, 0, 0, test_add,            OVS_RO},
-        {"remove-replace", NULL, 0, 0, test_remove_replace, OVS_RO},
-        {NULL,             NULL, 0, 0, NULL,                OVS_RO},
+        {"add",            NULL, 0, 0, test_add,              OVS_RO},
+        {"remove-replace", NULL, 0, 0, test_remove_replace,  OVS_RO},
+        {"bitmap-or",      NULL, 0, 0, test_dynamic_bitmap_or, OVS_RO},
+        {NULL,             NULL, 0, 0, NULL,                 OVS_RO},
     };
     struct ovs_cmdl_context ctx;
     ctx.argc = argc - 1;

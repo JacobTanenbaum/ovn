@@ -2458,6 +2458,7 @@ AT_CLEANUP
 AT_SETUP([Sparse array operations])
 check ovstest test-sparse-array add
 check ovstest test-sparse-array remove-replace
+check ovstest test-sparse-array bitmap-or
 AT_CLEANUP
 
 AT_SETUP([SPSC ring buffer])
