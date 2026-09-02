@@ -4,7 +4,15 @@ AT_BANNER([OVN northd])
 # Dumps important incremental processing related tables to FILENAME.
 # More tables can be added based on CHECK_NO_CHANGE_AFTER_RECOMPUTE's needs.
 m4_define([_DUMP_DB_TABLES], [
-    ovn-nbctl list logical_switch_port > $1
+    echo " " > $1
+    logical_switch_port_names=`ovn-nbctl --bare --columns=name list logical_switch_port | xargs -n1 | sort | xargs`
+    for logical_switch_port_name in $logical_switch_port_names; do
+        echo $logical_switch_port_name
+        ovn-nbctl find logical_switch_port name=$logical_switch_port_name >> $1
+        echo " " >> $1
+    done
+    
+    #ovn-nbctl list logical_switch_port > $1
     echo ======= >> $1
     ovn-sbctl list logical_flow >> $1
     ovn-sbctl list port_binding >> $1
@@ -37,6 +45,34 @@ m4_define([CHECK_NO_CHANGE_AFTER_RECOMPUTE], [
     check ovn-nbctl --wait=sb sync
     _DUMP_DB_TABLES(after)
     AT_CHECK([as northd diff before after], [0], [dnl
+])
+])
+
+
+# MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE
+# Triggers a northd recompute and compares the DB content of certain tables
+# related to incremental processing before and after the recompute, to make
+# sure nothing is changed by the recompute. It is used for ensuring the
+# correctness of incremental processing.
+m4_define([MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE], [
+    
+echo "CALL " $1 " Iteration " $2
+#    wait_port_up=$1
+#    if test X$wait_port_up = X1; then
+#        # Wait for hv to have received all previous commands
+#        # Make sure ports are up as otherwise it might come as a difference after recompute
+#        echo "waiting for ports up"
+#        check ovn-nbctl --wait=hv sync
+#        wait_for_ports_up
+#    fi
+    if test "$2" = 1; then
+        echo "HERE IN THE BEFORE GENERATEION"
+        _DUMP_DB_TABLES(before-$1)
+        check as northd ovn-appctl -t ovn-northd inc-engine/recompute
+        check ovn-nbctl --wait=sb sync
+    fi
+    _DUMP_DB_TABLES(after-$1)
+    AT_CHECK([as northd diff before-$1 after-$1], [0], [dnl
 ])
 ])
 
@@ -4505,6 +4541,8 @@ OVN_FOR_EACH_NORTHD_NO_HV([
 AT_SETUP([check BFD config propagation to SBDB])
 AT_KEYWORDS([northd-bfd])
 ovn_start
+for iter in $(seq 1 2); do
+echo $iter
 
 check ovn-nbctl --wait=sb lr-add r0
 for i in $(seq 1 9); do
@@ -4533,7 +4571,7 @@ check_engine_stats northd norecompute nocompute
 check_engine_stats bfd recompute nocompute
 check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
-CHECK_NO_CHANGE_AFTER_RECOMPUTE
+MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(1, $iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 uuid=$(fetch_column nb:bfd _uuid logical_port=r0-sw1)
@@ -4548,7 +4586,7 @@ check_engine_stats northd norecompute nocompute
 check_engine_stats bfd recompute nocompute
 check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
-CHECK_NO_CHANGE_AFTER_RECOMPUTE
+MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(2,$iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 check ovn-nbctl --bfd=$uuid lr-route-add r0 100.0.0.0/8 192.168.1.2
@@ -4560,7 +4598,7 @@ check_engine_stats bfd recompute nocompute
 check_engine_stats routes recompute nocompute
 check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
-CHECK_NO_CHANGE_AFTER_RECOMPUTE
+MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(3, $iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 check ovn-nbctl --bfd lr-route-add r0 200.0.0.0/8 192.168.2.2
@@ -4576,7 +4614,7 @@ check_engine_stats bfd recompute nocompute
 check_engine_stats routes recompute nocompute
 check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
-CHECK_NO_CHANGE_AFTER_RECOMPUTE
+MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(4, $iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 check ovn-nbctl --bfd --policy=src-ip lr-route-add r0 192.168.6.1/32 192.168.10.10 r0-sw6
@@ -4588,7 +4626,7 @@ check_engine_stats bfd recompute nocompute
 check_engine_stats route_policies recompute nocompute
 check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
-CHECK_NO_CHANGE_AFTER_RECOMPUTE
+MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(5,$iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 check ovn-nbctl --bfd --policy=src-ip lr-route-add r0 192.168.7.1/32 192.168.10.10 r0-sw7
@@ -4623,7 +4661,7 @@ check_engine_stats bfd recompute nocompute
 check_engine_stats routes recompute nocompute
 check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
-CHECK_NO_CHANGE_AFTER_RECOMPUTE
+MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(6, $iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 check ovn-nbctl lr-policy-del r0
@@ -4638,7 +4676,7 @@ check_engine_stats bfd recompute nocompute
 check_engine_stats route_policies recompute nocompute
 check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
-CHECK_NO_CHANGE_AFTER_RECOMPUTE
+MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(7, $iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 bfd_route_policy_uuid=$(fetch_column nb:bfd _uuid logical_port=r0-sw9)
@@ -4648,7 +4686,21 @@ AT_CHECK([ovn-nbctl list logical_router_policy | sed s/,//g | grep -q "$bfd_rout
 # recompute does not crash northd.
 check ovn-nbctl --wait=sb lrp-del r0-sw2
 check ovn-nbctl --wait=sb sync
+echo "END OF TEST"  + $iter
 
+check ovn-nbctl --wait=sb lr-del r0
+for i in $(seq 1 9); do
+    check ovn-nbctl --wait=sb ls-del sw$i
+done 
+for uuid in $(ovn-nbctl --format=csv --no-heading --columns=_uuid list bfd); do
+    ovn-nbctl destroy bfd $uuid
+done
+
+echo "TESTING"
+ovn-nbctl find logical_router_port
+echo "END TESTING"
+
+done
 OVN_CLEANUP_NORTHD
 AT_CLEANUP
 ])
