@@ -4,6 +4,25 @@ AT_BANNER([OVN northd])
 # Dumps important incremental processing related tables to FILENAME.
 # More tables can be added based on CHECK_NO_CHANGE_AFTER_RECOMPUTE's needs.
 m4_define([_DUMP_DB_TABLES], [
+    ovn-nbctl list logical_switch_port > $1
+    echo ======= >> $1
+    ovn-sbctl list logical_flow >> $1
+    ovn-sbctl list port_binding >> $1
+    ovn-sbctl list advertised_mac_binding >> $1
+    ovn-sbctl list address_set >> $1
+    ovn-sbctl list meter >> $1
+    ovn-sbctl list meter_band >> $1
+    ovn-sbctl list port_group >> $1
+    ovn-sbctl list multicast_group >> $1
+    ovn-sbctl list bfd >> $1
+    ovn-sbctl dump-flows > lflows_$1
+])
+
+
+# _DUMP_EQUIVALENT_TABLES FILENAME
+# Dumps important incremental processing related tables to FILENAME.
+# More tables can be added based on MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE's needs.
+m4_define([_DUMP_EQUIVALENT_TABLES], [
     echo " " > $1
     logical_switch_port_names=`ovn-nbctl --bare --columns=name list logical_switch_port | xargs -n1 | sort | xargs`
     for logical_switch_port_name in $logical_switch_port_names; do
@@ -12,9 +31,9 @@ m4_define([_DUMP_DB_TABLES], [
         echo " " >> $1
     done
     
-    #ovn-nbctl list logical_switch_port > $1
     echo ======= >> $1
     ovn-sbctl list logical_flow >> $1
+    ovn-sbctl list logical_flow >> temp-$1
     ovn-sbctl list port_binding >> $1
     ovn-sbctl list advertised_mac_binding >> $1
     ovn-sbctl list address_set >> $1
@@ -67,13 +86,18 @@ echo "CALL " $1 " Iteration " $2
 #    fi
     if test "$2" = 1; then
         echo "HERE IN THE BEFORE GENERATEION"
-        _DUMP_DB_TABLES(before-$1)
+        _DUMP_DB_TABLES(before)
         check as northd ovn-appctl -t ovn-northd inc-engine/recompute
         check ovn-nbctl --wait=sb sync
-    fi
-    _DUMP_DB_TABLES(after-$1)
-    AT_CHECK([as northd diff before-$1 after-$1], [0], [dnl
+        _DUMP_DB_TABLES(after)
+        AT_CHECK([as northd diff before after], [0], [dnl
 ])
+        _DUMP_EQUIVALENT_TABLES(before-$1)
+    else 
+        _DUMP_EQUIVALENT_TABLES(after-$1)
+        AT_CHECK([as northd diff before-$1 after-$1], [0], [dnl
+])
+    fi
 ])
 
 m4_divert_push([PREPARE_TESTS])
