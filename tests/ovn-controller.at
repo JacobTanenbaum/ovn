@@ -3291,6 +3291,10 @@ check ovs-vsctl -- \
     set open . external-ids:ovn-bridge-remote="tcp:127.0.0.1:1234" -- \
     set open . external-ids:ovn-bridge-remote-probe-interval=5000
 
+echo "sssssssss"
+ovs-vsctl find controller
+echo "ssssssssss"
+
 OVS_WAIT_UNTIL([test $(grep -c 'connecting to switch: "tcp:127.0.0.1:1234"' hv1/ovn-controller.log) = 4])
 OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1234: connected' hv1/ovn-controller.log])
 
@@ -3315,6 +3319,33 @@ check ovs-vsctl -- \
 
 OVS_WAIT_UNTIL([test $(grep -c 'connecting to switch: "tcp:127.0.0.1:1235"' hv1/ovn-controller.log) = 4])
 OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1235: connected' hv1/ovn-controller.log])
+
+OVN_CLEANUP([hv1])
+AT_CLEANUP
+
+AT_SETUP([ovn-controller - br-int primary controller])
+AT_KEYWORDS([ovn])
+ovn_start
+
+net_add n1
+sim_add hv1
+ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.20
+
+# ovn-controller registers itself as a primary OpenFlow controller of the
+# integration bridge, so OVS fail-open/fail-secure tracks the
+# ovn-controller connection.  This holds whether the bridge was just created
+# or pre-existed (ovn_attach pre-creates br-int here).
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=type --bare list Controller) = "xprimary"])
+AT_CHECK([ovs-vsctl --columns=type --bare list Controller], [0], [primary
+])
+# The bridge keeps its fail-mode=secure setting.
+AT_CHECK([ovs-vsctl --columns=fail_mode --bare list bridge br-int], [0], [secure
+])
+
+# ovn-controller connects through the primary (not the default .mgmt) socket.
+OVS_WAIT_UNTIL([grep -q 'connecting to switch: "unix:.*br-int\.ovn-primary"' hv1/ovn-controller.log])
+OVS_WAIT_UNTIL([grep -q 'br-int\.ovn-primary: connected' hv1/ovn-controller.log])
 
 OVN_CLEANUP([hv1])
 AT_CLEANUP
@@ -3656,16 +3687,19 @@ AT_CLEANUP
 AT_SETUP([ovn-controller - Start controller with empty db])
 AT_KEYWORDS([ovn])
 
+
 check ovsdb-tool create conf.db $ovs_srcdir/vswitchd/vswitch.ovsschema
 start_daemon ovsdb-server --remote=punix:db.sock
 start_daemon ovn-controller unix:db.sock
+
 
 AT_CHECK([ovsdb-client --bare dump unix:db.sock Open_vSwitch Open_vSwitch], [], [dnl
 Open_vSwitch table
 ])
 check ovs-vsctl --no-wait init
-OVS_WAIT_FOR_OUTPUT([ovs-vsctl show | tail -n +2], [], [dnl
+OVS_WAIT_FOR_OUTPUT_UNQUOTED([ovs-vsctl show | tail -n +2], [], [dnl
     Bridge br-int
+        Controller "punix:$(pwd)/br-int.ovn-primary"
         fail_mode: secure
         datapath_type: system
         Port br-int

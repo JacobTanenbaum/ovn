@@ -396,7 +396,12 @@
       <dd>
         <p>
           Connection to the OVN management bridge in OvS. It defaults to
-          <code>unix:<var>br-int</var>.mgmt</code> when not specified.
+          <code>unix:<var>br-int</var>.ovn-primary</code> when not specified.
+          This is the primary OpenFlow controller connection for the
+          integration bridge; the usual
+          <code>unix:<var>br-int</var>.mgmt</code> management socket remains
+          available to tools such as <code>ovs-ofctl</code>(8) and
+          <code>ovs-appctl</code>(8).
         </p>
       </dd>
       <dt><code>external_ids:ovn-bridge-remote-probe-interval</code></dt>
