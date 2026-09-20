@@ -396,7 +396,26 @@
       <dd>
         <p>
           Connection to the OVN management bridge in OvS. It defaults to
-          <code>unix:<var>br-int</var>.mgmt</code> when not specified.
+          <code>unix:<var>br-int</var>.ovn-primary</code> when not specified.
+          This is the primary OpenFlow controller connection for the
+          integration bridge; the usual
+          <code>unix:<var>br-int</var>.mgmt</code> management socket remains
+          available to tools such as <code>ovs-ofctl</code>(8) and
+          <code>ovs-appctl</code>(8).
+        </p>
+        <p>
+          When this option is unset, or is a
+          <code>unix:</code>/<code>punix:</code> target, the connection is
+          registered on the bridge as a <code>primary</code> OpenFlow
+          controller whose target is the passive (listening)
+          <code>punix:</code> form of this endpoint, so that OVS
+          fail-open/fail-secure tracks the <code>ovn-controller</code>
+          connection.  For <code>tcp:</code> or <code>ssl:</code> targets the
+          listener is not hosted by <code>ovn-controller</code>; the primary
+          OpenFlow controller (listener) must be configured separately, e.g.
+          with <code>ovs-vsctl set-controller</code>(8).  In that case OVS
+          fail-secure tracks that configured controller rather than one created
+          by <code>ovn-controller</code>.
         </p>
       </dd>
       <dt><code>external_ids:ovn-bridge-remote-probe-interval</code></dt>

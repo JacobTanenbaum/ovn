@@ -371,6 +371,25 @@
       Settings</code> in <code>ovs-vsctl</code>(8) for more information.
     </dd>
 
+    <dt>a <code>primary</code> <code>Controller</code></dt>
+    <dd>
+      <code>ovn-controller</code> connects to the integration bridge through a
+      <code>Controller</code> row of type <code>primary</code> rather than
+      through the service controller that OVS always adds internally for the
+      <code>br-int.mgmt</code> port.  The row's target is the passive listener
+      <code>punix:<var>run_dir</var>/br-int.ovn-primary</code> and the
+      <code>ovn-controller</code> OpenFlow connections dial the corresponding
+      <code>unix:</code> form of the same path.  Because the connection is a
+      <em>primary</em> controller, the bridge's OpenFlow fail-open/fail-secure
+      state machine and <code>ofproto_is_alive()</code> track the
+      <code>ovn-controller</code> connection.  When
+      <code>external_ids:ovn-bridge-remote</code> names a local
+      <code>unix:</code> or <code>punix:</code> target, the listener is
+      created on that path instead; for a remote <code>tcp:</code> or
+      <code>ssl:</code> target the operator configures the primary controller
+      separately, e.g. with <code>ovs-vsctl set-controller</code>(8).
+    </dd>
+
     <dt><code>other-config:disable-in-band=true</code></dt>
     <dd>
       Suppresses in-band control flows for the integration bridge.  It would be
