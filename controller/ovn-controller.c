@@ -145,6 +145,7 @@ static unixctl_cb_func debug_delay_nb_cfg_report;
 #define OVS_NB_CFG_TS_NAME "ovn-nb-cfg-ts"
 #define OVS_NB_CFG_SB_TS_NAME "ovn-nb-cfg-sb-ts"
 #define OVS_STARTUP_TS_NAME "ovn-startup-ts"
+#define BR_INT_PRIMARY_CTRL_ID "ovn-br-int-primary"
 
 struct br_int_remote {
     char *target;
@@ -655,6 +656,104 @@ get_br_datapath(const struct ovsrec_open_vswitch *cfg,
     return NULL;
 }
 
+/* Returns the primary Controller target ovn-controller should register for
+ * the integration bridge, or NULL if it should not register one.  'remote' is
+ * the value of external_ids:ovn-bridge-remote, or NULL when unset (in which
+ * case the default local "unix:<rundir>/<bridge>.ovn-primary" endpoint is
+ * used).
+ *
+ * The primary Controller must be a listener that ovn-controller itself hosts
+ * on the same endpoint its software connection dials, so that OVS's
+ * fail-open/fail-secure state machine (ofproto_is_alive()) can observe the
+ * ovn-controller connection.  That is only possible for local endpoints:
+ *   - unix:/punix: (and the default) are local sockets ovn-controller can
+ *     listen on, so the passive "punix:<path>" form is registered.
+ *   - tcp:/ssl: (and ptcp:/pssl:) are remote endpoints; the listener is not
+ *     hosted by ovn-controller (it dials the peer).  The operator configures
+ *     the primary controller (listener) separately, e.g. with "ovs-vsctl
+ *     set-controller", so nothing is registered here.  Registering a local
+ *     stand-in would be wrong (and, for inet targets, the passive form uses a
+ *     "[<port>][:<host>]" layout that does not match "host:port").
+ */
+static char *
+br_int_primary_target(const char *remote, const struct ovsrec_bridge *br_int)
+{
+    if (!remote) {
+        return xasprintf("punix:%s/%s.ovn-primary", ovs_rundir(),
+                         br_int->name);
+    }
+    if (!strncmp(remote, "unix:", 5) || !strncmp(remote, "punix:", 6)) {
+        return xasprintf("punix:%s", strchr(remote, ':') + 1);
+    }
+    return NULL;
+}
+
+/* Ensure the integration bridge has a primary OpenFlow controller that
+ * points at the passive listener ovn-controller connects through (see
+ * br_int_remote_update()).  Making that connection a *primary* controller
+ * (as opposed to the service controller that OVS always adds internally for
+ * the <bridge>.mgmt port) causes the bridge's OpenFlow fail-open/fail-secure
+ * state machine and ofproto_is_alive() to track the ovn-controller
+ * connection.  A primary controller is registered only for local
+ * (unix/punix) endpoints, for which ovn-controller hosts the listener; for
+ * remote (tcp/ssl) endpoints the operator configures the primary controller
+ * separately.  This runs regardless of whether the bridge was just created
+ * or pre-existed (e.g. created by the distribution's startup scripts). */
+static void
+process_br_int_primary_controller(struct ovsdb_idl_txn *ovs_idl_txn,
+                                  const struct ovsrec_bridge *br_int,
+                                  const struct ovsrec_open_vswitch *cfg)
+{
+    char *primary_target =
+        br_int_primary_target(
+            smap_get(&cfg->external_ids, "ovn-bridge-remote"), br_int);
+
+    /* Drop any primary controller registered by a previous run that no
+     * longer matches the configured endpoint (e.g. because
+     * external_ids:ovn-bridge-remote was changed or removed, or the run
+     * directory moved).  Only rows created by ovn-controller -- tagged with
+     * BR_INT_PRIMARY_CTRL_ID in their external_ids -- are managed; primary
+     * controllers configured by the operator (e.g. "ovs-vsctl
+     * set-controller") are left untouched. */
+    for (size_t i = 0; i < br_int->n_controller; i++) {
+        const struct ovsrec_controller *c = br_int->controller[i];
+        /* c->type may be unset (NULL) for controllers configured by the
+         * operator, so identify rows managed by ovn-controller by the
+         * external_ids tag, which is safe to read, rather than by type. */
+        if (c
+            && smap_get_bool(&c->external_ids, BR_INT_PRIMARY_CTRL_ID, false)
+            && (!primary_target
+                || strcmp(c->target, primary_target))) {
+            ovsrec_bridge_update_controller_delvalue(br_int, c);
+            ovsrec_controller_delete(c);
+        }
+    }
+    if (!primary_target) {
+        return;
+    }
+
+    /* A primary controller for the configured endpoint already exists; keep
+     * it.  This also covers a matching row created before this release
+     * tagged it, so it is not duplicated. */
+    for (size_t i = 0; i < br_int->n_controller; i++) {
+        const struct ovsrec_controller *c = br_int->controller[i];
+        if (c && !strcmp(c->target, primary_target)
+            && c->type && !strcmp(c->type, "primary")) {
+            free(primary_target);
+            return;
+        }
+    }
+
+    struct ovsrec_controller *primary = ovsrec_controller_insert(ovs_idl_txn);
+    ovsrec_controller_set_target(primary, primary_target);
+    ovsrec_controller_set_type(primary, "primary");
+    const struct smap ext_ids =
+        SMAP_CONST1(&ext_ids, BR_INT_PRIMARY_CTRL_ID, "true");
+    ovsrec_controller_set_external_ids(primary, &ext_ids);
+    free(primary_target);
+    ovsrec_bridge_update_controller_addvalue(br_int, primary);
+}
+
 static void
 process_br_int(struct ovsdb_idl_txn *ovs_idl_txn,
                const struct ovsrec_bridge_table *bridge_table,
@@ -699,6 +798,7 @@ process_br_int(struct ovsdb_idl_txn *ovs_idl_txn,
                 ovsrec_bridge_set_fail_mode(br_int, "secure");
                 VLOG_WARN("Integration bridge fail-mode changed to 'secure'.");
             }
+            process_br_int_primary_controller(ovs_idl_txn, br_int, cfg);
             if (br_int_dp) {
                 *br_int_dp = get_br_datapath(cfg, datapath_type);
                 if (!(*br_int_dp)) {
@@ -992,6 +1092,11 @@ ctrl_register_ovs_idl(struct ovsdb_idl *ovs_idl)
     ovsdb_idl_add_column(ovs_idl, &ovsrec_bridge_col_flow_tables);
     ovsdb_idl_add_column(ovs_idl, &ovsrec_bridge_col_other_config);
     ovsdb_idl_add_column(ovs_idl, &ovsrec_bridge_col_external_ids);
+    ovsdb_idl_add_column(ovs_idl, &ovsrec_bridge_col_controller);
+    ovsdb_idl_add_table(ovs_idl, &ovsrec_table_controller);
+    ovsdb_idl_add_column(ovs_idl, &ovsrec_controller_col_target);
+    ovsdb_idl_add_column(ovs_idl, &ovsrec_controller_col_type);
+    ovsdb_idl_add_column(ovs_idl, &ovsrec_controller_col_external_ids);
     ovsdb_idl_add_table(ovs_idl, &ovsrec_table_flow_table);
     ovsdb_idl_add_column(ovs_idl, &ovsrec_flow_table_col_prefixes);
     ovsdb_idl_add_table(ovs_idl, &ovsrec_table_ssl);
@@ -7820,7 +7925,7 @@ br_int_remote_update(struct br_int_remote *remote,
             smap_get(&cfg->external_ids, "ovn-bridge-remote");
     char *target = ext_target
             ? xstrdup(ext_target)
-            : xasprintf("unix:%s/%s.mgmt", ovs_rundir(), br_int->name);
+            : xasprintf("unix:%s/%s.ovn-primary", ovs_rundir(), br_int->name);
 
     if (!remote->target || strcmp(remote->target, target)) {
         free(remote->target);
@@ -8182,6 +8287,7 @@ main(int argc, char *argv[])
     VLOG_INFO("OVN internal version is : [%s]", ovn_version);
 
     /* Main loop. */
+    bool first_commit = true;
     int ovnsb_txn_status = 1;
     struct tracked_acl_ids *tracked_acl_ids = NULL;
     while (!exit_args.exiting) {
@@ -8273,15 +8379,6 @@ main(int argc, char *argv[])
         const struct ovsrec_datapath *br_int_dp = NULL;
         const struct ovsrec_open_vswitch *cfg =
             ovsrec_open_vswitch_table_first(ovs_table);
-        process_br_int(ovs_idl_txn, bridge_table, ovs_table, &br_int,
-                       ovsrec_server_has_datapath_table(ovs_idl_loop.idl)
-                       ? &br_int_dp
-                       : NULL);
-        br_int_remote_update(&br_int_remote, br_int, ovs_table);
-        statctrl_update_swconn(br_int_remote.target,
-                               br_int_remote.probe_interval);
-        pinctrl_update_swconn(br_int_remote.target,
-                              br_int_remote.probe_interval);
 
         /* Enable ACL matching for double tagged traffic. */
         if (ovs_idl_txn && cfg) {
@@ -8310,6 +8407,18 @@ main(int argc, char *argv[])
                    cfg, "ovn-managed-flow-restore-wait");
             }
         }
+
+        process_br_int(ovs_idl_txn, bridge_table, ovs_table, &br_int,
+                       ovsrec_server_has_datapath_table(ovs_idl_loop.idl)
+                       ? &br_int_dp
+                       : NULL);
+        if (!first_commit && br_int && br_int_remote.target) {
+                    statctrl_update_swconn(br_int_remote.target,
+                                           br_int_remote.probe_interval);
+                    pinctrl_update_swconn(br_int_remote.target,
+                                          br_int_remote.probe_interval);
+        }
+        br_int_remote_update(&br_int_remote, br_int, ovs_table);
 
         static bool chassis_idx_stored = false;
         if (ovs_idl_txn && !chassis_idx_stored) {
@@ -8777,6 +8886,7 @@ main(int argc, char *argv[])
             vif_plug_clear_changed(
                     &vif_plug_changed_iface_ids);
         } else if (ovs_txn_status == 1) {
+            first_commit = false;
             /* The transaction committed successfully
              * (or it did not change anything in the database). */
             ct_zones_data = engine_get_data(&en_ct_zones);
