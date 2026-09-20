@@ -1,5 +1,21 @@
 Post v26.09.0
 --------------
+   - ovn-controller now controls the OpenFlow flows of the br-int
+     integration bridge through a primary OpenFlow controller that it
+     registers on the bridge (target "punix:<run_dir>/br-int.ovn-primary"),
+     instead of the service controller of the br-int.mgmt management
+     port.  This lets the bridge's fail-open/fail-secure state machine
+     track the ovn-controller connection.  When
+     external_ids:ovn-bridge-remote is a local unix: or punix: target, the
+     primary controller listens on the same socket ovn-controller dials;
+     for a remote tcp: or ssl: target the operator must configure the
+     primary controller separately, e.g. with "ovs-vsctl
+     set-controller br-int ptcp:<port>".
+   - Note that upgrading to this release adds the first primary
+     controller to an existing br-int, which causes OVS to flush the
+     OpenFlow flow, group, and meter tables.  ovn-controller reinstalls
+     them on its next run; with fail_mode=secure, br-int traffic on the
+     chassis is dropped for that window.
    - Added a new "options:ttl" key on the NB DNS table to make the TTL of
      DNS replies from OVN's native DNS resolver configurable per row.
    - Removed implementations of the commit_ecmp_nh, chk_ecmp_nh, and
