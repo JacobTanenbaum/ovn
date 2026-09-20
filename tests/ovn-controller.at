@@ -3319,6 +3319,83 @@ OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1235: connected' hv1/ovn-controller.log])
 OVN_CLEANUP([hv1])
 AT_CLEANUP
 
+AT_SETUP([ovn-controller - br-int primary controller])
+AT_KEYWORDS([ovn])
+ovn_start
+
+net_add n1
+sim_add hv1
+ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.20
+
+# ovn-controller registers itself as a primary OpenFlow controller of the
+# integration bridge, so OVS fail-open/fail-secure tracks the
+# ovn-controller connection.  This holds whether the bridge was just created
+# or pre-existed (ovn_attach pre-creates br-int here).
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=type --bare list Controller) = "xprimary"])
+AT_CHECK([ovs-vsctl --columns=type --bare list Controller], [0], [primary
+])
+# The bridge keeps its fail-mode=secure setting.
+AT_CHECK([ovs-vsctl --columns=fail_mode --bare list bridge br-int], [0], [secure
+])
+
+# ovn-controller connects through the primary (not the default .mgmt) socket.
+OVS_WAIT_UNTIL([grep -q 'connecting to switch: "unix:.*br-int\.ovn-primary"' hv1/ovn-controller.log])
+OVS_WAIT_UNTIL([grep -q 'br-int\.ovn-primary: connected' hv1/ovn-controller.log])
+
+OVN_CLEANUP([hv1])
+AT_CLEANUP
+
+AT_SETUP([ovn-controller - br-int primary controller with ovn-bridge-remote])
+AT_KEYWORDS([ovn])
+ovn_start
+
+net_add n1
+sim_add hv1
+ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.20
+
+# With external_ids:ovn-bridge-remote unset, ovn-controller registers the
+# default primary controller on the default local listener.
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=target --bare find Controller type=primary) = "xpunix:$ovs_base/hv1/br-int.ovn-primary"])
+
+# A local unix: override: the primary controller moves to the passive form of
+# the overridden path, and the previous (stale) primary is removed.
+check ovs-vsctl set open . external_ids:ovn-bridge-remote=unix:$ovs_base/hv1/br-int.ovn-override
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=target --bare find Controller type=primary) = "xpunix:$ovs_base/hv1/br-int.ovn-override"])
+
+# Remove the local override: ovn-controller restores the default primary.
+check ovs-vsctl remove open . external_ids ovn-bridge-remote
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=target --bare find Controller type=primary) = "xpunix:$ovs_base/hv1/br-int.ovn-primary"])
+
+# A remote tcp: override: the operator configures the primary listener
+# (separately, since ovn-controller cannot host a remote listener) and then
+# points the override at it.  ovn-controller dials the endpoint, removes the
+# stale local primary, and registers no primary controller of its own; the
+# operator-configured controller (which has no type) is left alone.
+check ovs-vsctl set-controller br-int ptcp:1276
+# "set-controller" wiped the controllers; with the override unset,
+# ovn-controller re-registers the default primary.
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=target --bare find Controller type=primary) = "xpunix:$ovs_base/hv1/br-int.ovn-primary"])
+check ovs-vsctl set open . external_ids:ovn-bridge-remote=tcp:127.0.0.1:1276
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=target --bare find Controller) = "xptcp:1276"])
+OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1276: connected' hv1/ovn-controller.log])
+
+# Removing the override: ovn-controller registers the default primary again,
+# keeping the operator-configured controller, and the swconn reconnects
+# through the default socket.
+check ovs-vsctl remove open . external_ids ovn-bridge-remote
+OVS_WAIT_UNTIL([test x$(ovs-vsctl --columns=target --bare find Controller type=primary) = "xpunix:$ovs_base/hv1/br-int.ovn-primary"])
+OVS_WAIT_UNTIL([test $(grep -c 'ofctrl: connecting to switch: "unix:'$ovs_base'/hv1/br-int.ovn-primary"' hv1/ovn-controller.log) -ge 2])
+# Both controllers remain: the operator-configured one and the default
+# primary.  "find --bare" separates rows with a blank line, so count the
+# non-empty lines.
+OVS_WAIT_UNTIL([test 2 = $(ovs-vsctl --columns=target --bare find Controller | grep -c .)])
+OVS_WAIT_UNTIL([ovs-vsctl --columns=target --bare find Controller | grep -qx ptcp:1276])
+
+OVN_CLEANUP([hv1])
+AT_CLEANUP
+
 AT_SETUP([ovn-controller - br-int flow table prefixes])
 AT_KEYWORDS([ovn-controller prefixes])
 ovn_start
@@ -3664,8 +3741,9 @@ AT_CHECK([ovsdb-client --bare dump unix:db.sock Open_vSwitch Open_vSwitch], [], 
 Open_vSwitch table
 ])
 check ovs-vsctl --no-wait init
-OVS_WAIT_FOR_OUTPUT([ovs-vsctl show | tail -n +2], [], [dnl
+OVS_WAIT_FOR_OUTPUT_UNQUOTED([ovs-vsctl show | tail -n +2], [], [dnl
     Bridge br-int
+        Controller "punix:$(pwd)/br-int.ovn-primary"
         fail_mode: secure
         datapath_type: system
         Port br-int
