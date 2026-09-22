@@ -698,8 +698,19 @@ br_int_primary_target(const char *remote, const struct ovsrec_bridge *br_int)
  * (unix/punix) endpoints, for which ovn-controller hosts the listener; for
  * remote (tcp/ssl) endpoints the operator configures the primary controller
  * separately.  This runs regardless of whether the bridge was just created
- * or pre-existed (e.g. created by the distribution's startup scripts). */
-static void
+ * or pre-existed (e.g. created by the distribution's startup scripts).
+ *
+ * When a new row is inserted, Open_vSwitch.next_cfg is incremented in the
+ * same transaction.  This marks the commit that introduces the controller,
+ * so the caller can defer the first connection to the primary endpoint until
+ * ovs-vswitchd has applied that commit (and thereby created the punix
+ * listener).  Returns true if a new row was inserted (and next_cfg
+ * incremented), false when no row is inserted: either no primary target
+ * applies (remote tcp/ssl endpoint) or a matching primary controller already
+ * exists, in which case ovs-vswitchd has already created the punix listener
+ * and no wait is needed.
+ */
+static bool
 process_br_int_primary_controller(struct ovsdb_idl_txn *ovs_idl_txn,
                                   const struct ovsrec_bridge *br_int,
                                   const struct ovsrec_open_vswitch *cfg)
@@ -729,7 +740,7 @@ process_br_int_primary_controller(struct ovsdb_idl_txn *ovs_idl_txn,
         }
     }
     if (!primary_target) {
-        return;
+        return false;
     }
 
     /* A primary controller for the configured endpoint already exists; keep
@@ -740,7 +751,7 @@ process_br_int_primary_controller(struct ovsdb_idl_txn *ovs_idl_txn,
         if (c && !strcmp(c->target, primary_target)
             && c->type && !strcmp(c->type, "primary")) {
             free(primary_target);
-            return;
+            return false;
         }
     }
 
@@ -752,9 +763,24 @@ process_br_int_primary_controller(struct ovsdb_idl_txn *ovs_idl_txn,
     ovsrec_controller_set_external_ids(primary, &ext_ids);
     free(primary_target);
     ovsrec_bridge_update_controller_addvalue(br_int, primary);
+
+    /* Bump next_cfg in the same transaction as the insert so that
+     * ovs-vswitchd's cur_cfg ack unambiguously covers the commit that
+     * introduces this controller.  ovn-controller defers the first
+     * connection to the primary endpoint until that ack, which guarantees
+     * the punix listener has been created before it is dialed. */
+    ovsdb_idl_txn_increment(ovs_idl_txn, &cfg->header_,
+                            &ovsrec_open_vswitch_col_next_cfg, false);
+    return true;
 }
 
-static void
+/* Returns true when a new primary Controller row is inserted into
+ * 'ovs_idl_txn' (which also increments Open_vSwitch next_cfg in the same
+ * commit).  The caller captures the pre-increment next_cfg value and waits
+ * until ovs-vswitchd's cur_cfg advances past it before connecting to the
+ * primary endpoint, guaranteeing the punix listener has been created.  Returns
+ * false when no row is inserted. */
+static bool
 process_br_int(struct ovsdb_idl_txn *ovs_idl_txn,
                const struct ovsrec_bridge_table *bridge_table,
                const struct ovsrec_open_vswitch_table *ovs_table,
@@ -762,6 +788,7 @@ process_br_int(struct ovsdb_idl_txn *ovs_idl_txn,
                const struct ovsrec_datapath **br_int_dp)
 {
     const struct ovsrec_bridge *br_int = get_br_int(bridge_table, ovs_table);
+    bool primary_ctl_inserted = false;
 
     ovs_assert(br_int_);
     if (ovs_idl_txn) {
@@ -798,7 +825,8 @@ process_br_int(struct ovsdb_idl_txn *ovs_idl_txn,
                 ovsrec_bridge_set_fail_mode(br_int, "secure");
                 VLOG_WARN("Integration bridge fail-mode changed to 'secure'.");
             }
-            process_br_int_primary_controller(ovs_idl_txn, br_int, cfg);
+            primary_ctl_inserted = process_br_int_primary_controller(
+                ovs_idl_txn, br_int, cfg);
             if (br_int_dp) {
                 *br_int_dp = get_br_datapath(cfg, datapath_type);
                 if (!(*br_int_dp)) {
@@ -811,6 +839,7 @@ process_br_int(struct ovsdb_idl_txn *ovs_idl_txn,
         }
     }
     *br_int_ = br_int;
+    return primary_ctl_inserted;
 }
 
 static void
@@ -1083,6 +1112,8 @@ ctrl_register_ovs_idl(struct ovsdb_idl *ovs_idl)
     ovsdb_idl_add_column(ovs_idl, &ovsrec_open_vswitch_col_other_config);
     ovsdb_idl_add_column(ovs_idl, &ovsrec_open_vswitch_col_bridges);
     ovsdb_idl_add_column(ovs_idl, &ovsrec_open_vswitch_col_datapaths);
+    ovsdb_idl_add_column(ovs_idl, &ovsrec_open_vswitch_col_cur_cfg);
+    ovsdb_idl_add_column(ovs_idl, &ovsrec_open_vswitch_col_next_cfg);
     ovsdb_idl_add_table(ovs_idl, &ovsrec_table_interface);
     ovsdb_idl_add_table(ovs_idl, &ovsrec_table_port);
     ovsdb_idl_add_table(ovs_idl, &ovsrec_table_bridge);
@@ -8287,7 +8318,17 @@ main(int argc, char *argv[])
     VLOG_INFO("OVN internal version is : [%s]", ovn_version);
 
     /* Main loop. */
-    bool first_commit = true;
+    /* Set when process_br_int_primary_controller() inserts a new primary
+     * controller (and bumps Open_vSwitch next_cfg in the same commit).
+     * While set, the software connections to the primary endpoint are held
+     * back until ovs-vswitchd has applied that commit, which is the change
+     * that creates the punix listener.  The wait is cleared once cur_cfg
+     * advances past the pre-increment next_cfg value captured when the
+     * controller was inserted -- the same ack protocol ovs-vsctl --wait
+     * relies on.  It is only set for local (unix/punix) endpoints, where
+     * ovn-controller registers and hosts the primary listener. */
+    bool primary_ctl_wait = false;
+    int64_t primary_ctl_base = 0;
     int ovnsb_txn_status = 1;
     struct tracked_acl_ids *tracked_acl_ids = NULL;
     while (!exit_args.exiting) {
@@ -8380,6 +8421,17 @@ main(int argc, char *argv[])
         const struct ovsrec_open_vswitch *cfg =
             ovsrec_open_vswitch_table_first(ovs_table);
 
+        /* ovs-vswitchd has applied the commit that introduced the primary
+         * controller (cur_cfg advanced past the pre-increment next_cfg that
+         * was in force when the controller was inserted).  The punix
+         * listener has been created, so the software connections may dial
+         * it.  On a reconnection this check still holds, because cur_cfg
+         * only increases and was at most primary_ctl_base when it was
+         * captured. */
+        if (primary_ctl_wait && cfg && cfg->cur_cfg > primary_ctl_base) {
+            primary_ctl_wait = false;
+        }
+
         /* Enable ACL matching for double tagged traffic. */
         if (ovs_idl_txn && cfg) {
             int vlan_limit = smap_get_int(
@@ -8408,15 +8460,29 @@ main(int argc, char *argv[])
             }
         }
 
-        process_br_int(ovs_idl_txn, bridge_table, ovs_table, &br_int,
-                       ovsrec_server_has_datapath_table(ovs_idl_loop.idl)
-                       ? &br_int_dp
-                       : NULL);
-        if (!first_commit && br_int && br_int_remote.target) {
-                    statctrl_update_swconn(br_int_remote.target,
-                                           br_int_remote.probe_interval);
-                    pinctrl_update_swconn(br_int_remote.target,
-                                          br_int_remote.probe_interval);
+        /* If a new primary controller was just registered, record the
+         * pre-increment next_cfg so the software connections can be held
+         * back until ovs-vswitchd applies the commit that creates the
+         * punix listener. */
+        bool inserted_primary_ctl = process_br_int(
+            ovs_idl_txn, bridge_table, ovs_table, &br_int,
+            ovsrec_server_has_datapath_table(ovs_idl_loop.idl)
+            ? &br_int_dp
+            : NULL);
+        if (inserted_primary_ctl && cfg) {
+            primary_ctl_wait = true;
+            primary_ctl_base = cfg->next_cfg;
+        }
+
+        /* While the primary listener has not been confirmed created, do not
+         * dial the primary endpoint.  The feature and OpenFlow connections
+         * are gated in the same way further below. */
+        const char *swconn_target = primary_ctl_wait
+            ? NULL
+            : br_int_remote.target;
+        if (br_int && swconn_target) {
+            statctrl_update_swconn(swconn_target, br_int_remote.probe_interval);
+            pinctrl_update_swconn(swconn_target, br_int_remote.probe_interval);
         }
         br_int_remote_update(&br_int_remote, br_int, ovs_table);
 
@@ -8458,11 +8524,13 @@ main(int argc, char *argv[])
 
             /* If any OVS feature support changed, force a full recompute.
              * 'br_int_dp' is valid only if an OVS transaction is possible.
+             * While the primary listener has not been confirmed created,
+             * pass NULL to disconnect instead of dialing it.
              */
             if (ovs_idl_txn
                 && ovs_feature_support_run(br_int_dp ?
                                            &br_int_dp->capabilities : NULL,
-                                           br_int_remote.target,
+                                           swconn_target,
                                            br_int_remote.probe_interval)) {
                 VLOG_INFO("OVS feature set changed, force recompute.");
                 engine_set_force_recompute();
@@ -8478,7 +8546,7 @@ main(int argc, char *argv[])
 
             if (br_int) {
                 ct_zones_data = engine_get_data(&en_ct_zones);
-                if (ofctrl_run(br_int_remote.target,
+                if (ofctrl_run(swconn_target,
                                br_int_remote.probe_interval,
                                ct_zones_data ? &ct_zones_data->ctx.pending
                                              : NULL,
@@ -8886,7 +8954,6 @@ main(int argc, char *argv[])
             vif_plug_clear_changed(
                     &vif_plug_changed_iface_ids);
         } else if (ovs_txn_status == 1) {
-            first_commit = false;
             /* The transaction committed successfully
              * (or it did not change anything in the database). */
             ct_zones_data = engine_get_data(&en_ct_zones);
