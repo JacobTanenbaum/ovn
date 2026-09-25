@@ -16,6 +16,13 @@ Post v26.09.0
        now written to the SB MAC_Binding table and consumed at the
        same priority as dynamic entries, making the preference option
        obsolete.
+     * ovn-controller no longer monitors the whole cluster's
+       Advertised_Route table at startup; it defers its kernel route
+       updates until the initial dump of the advertised routes of the
+       local route-exchange datapaths is complete.  This avoids
+       deleting routes installed before a restart and reduces
+       ovn-controller restart time for deployments with many
+       advertised routes.
 
 OVN v26.09.0 - xxx xx xxxx
 --------------------------
