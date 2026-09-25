@@ -43,6 +43,25 @@ m4_define([_DUMP_EQUIVALENT_TABLES], [
     ovn-sbctl list multicast_group >> $1
     ovn-sbctl list bfd >> $1
     ovn-sbctl dump-flows > lflows_$1
+
+    echo "BBBBBBBBBB"
+    uuid_list=$(ovn-nbctl --bare --columns _uuid list logical_switch_port)
+    i=0
+    for uuid in $uuid_list; do
+        sed -i "s/$uuid/$i/g" $1 
+        echo "AWWW YEAHHHH UUID" $uuid $i
+
+        
+        IFS='-' read -ra blocks <<< "$uuid"
+        echo $uuid | awk -F- '{print $1}'
+
+        echo ${blocks}
+   ##     sed -i "s/$blocks/$i/g" $1
+        
+        i=$((i + 1))
+    done
+    echo "BBBBBBBBBB"
+
 ])
 
 # CHECK_NO_CHANGE_AFTER_RECOMPUTE
@@ -4612,7 +4631,7 @@ check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
 MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(2,$iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
-
+echo "HERE"
 check ovn-nbctl --bfd=$uuid lr-route-add r0 100.0.0.0/8 192.168.1.2
 wait_column down bfd status logical_port=r0-sw1
 AT_CHECK([ovn-nbctl lr-route-list r0 | grep 192.168.1.2 | grep -q bfd], [0], [], [ignore])
