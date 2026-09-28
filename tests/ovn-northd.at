@@ -16,6 +16,12 @@ m4_define([_DUMP_DB_TABLES], [
     ovn-sbctl list multicast_group >> $1
     ovn-sbctl list bfd >> $1
     ovn-sbctl dump-flows > lflows_$1
+
+
+#    echo $OVN_RUNDIR/ovn-nb/ovn-nb.db
+#    ovn-nbctl --format=json list Logical_Switch_Port 
+#    ovn-nbctl list Logical_Switch_Port 
+#    ovsdb-client dump unix:$OVN_RUNDIR/ovn-nb/ovn-nb.sock OVN_Northbound --format=json > ovn-nb.json
 ])
 
 
@@ -44,19 +50,38 @@ m4_define([_DUMP_EQUIVALENT_TABLES], [
     ovn-sbctl list bfd >> $1
     ovn-sbctl dump-flows > lflows_$1
 
-    echo "BBBBBBBBBB"
+
+
+    ovn-nbctl --format=json list logical_switch_port > $1.json
+    ovn-sbctl --format=json list logical_flow >> $1.json
+    
+#    echo "ZZZZZ"
+###    ovn-sbctl --columns=_uuid --bare find logical_flow
+#    ovn-sbctl find logical_flow
+#    echo "ZZZZZ"
+#    flow_list=$(ovn-sbctl --columns=_uuid --bare find logical_flow)
+#    echo $flow_list
+#    echo "HERE"
+#    for uuid in $flow_list; do
+#        ovn-sbctl get logical_flow $uuid
+#        ovn-sbctl find Logical_FLow _uuid=$uuid
+#        ovn-sbctl get logical_flow $uuid external_ids
+#        ovn-sbctl get logical_flow _uuid=$uuid
+#    done 
+#    echo "BBBBBBBBBB"
     uuid_list=$(ovn-nbctl --bare --columns _uuid list logical_switch_port)
     i=0
-    for uuid in $uuid_list; do
-        sed -i "s/$uuid/$i/g" $1 
-        echo "AWWW YEAHHHH UUID" $uuid $i
+    for uuid_safe in $uuid_list; do
+        sed -i "s/$uuid_safe/$i/g" $1 
+        echo "AWWW YEAHHHH UUID" $uuid_safe $i
 
         
-        IFS='-' read -ra blocks <<< "$uuid"
-        echo $uuid | awk -F- '{print $1}'
+        IFS='-' read -ra blocks <<< "$uuid_safe"
+        echo $uuid_safe | awk -F- '{print $1}'
 
         echo ${blocks}
-   ##     sed -i "s/$blocks/$i/g" $1
+        sed -i "s/\"${blocks}\"/$i/g" $1
+        sed -i "s/${blocks}/$i/g" $1
         
         i=$((i + 1))
     done
@@ -4618,6 +4643,7 @@ MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(1, $iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
 
 uuid=$(fetch_column nb:bfd _uuid logical_port=r0-sw1)
+echo "THIS SHOULD BE UUID IN MAIN THINGY: " $uuid
 check ovn-nbctl set bfd $uuid min_tx=1000 min_rx=1000 detect_mult=100
 
 uuid_2=$(fetch_column nb:bfd _uuid logical_port=r0-sw2)
@@ -4631,8 +4657,9 @@ check_engine_stats lflow recompute nocompute
 check_engine_stats northd_output norecompute compute
 MY_CHECK_NO_CHANGE_AFTER_RECOMPUTE(2,$iter)
 check as northd ovn-appctl -t ovn-northd inc-engine/clear-stats
-echo "HERE"
+echo "WHY IS FAILING"
 check ovn-nbctl --bfd=$uuid lr-route-add r0 100.0.0.0/8 192.168.1.2
+echo "SHOULD NOT BE"
 wait_column down bfd status logical_port=r0-sw1
 AT_CHECK([ovn-nbctl lr-route-list r0 | grep 192.168.1.2 | grep -q bfd], [0], [], [ignore])
 
