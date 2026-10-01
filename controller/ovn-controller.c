@@ -5761,6 +5761,16 @@ struct ed_type_route_exchange {
      * installed previously but that are not yet present in our (partial)
      * view of the SB database. */
     bool initial_routes_loaded;
+    /* True once the first armed kernel sync has run.  Unlike
+     * initial_routes_loaded, it is not cleared when the local
+     * route-exchange datapath set changes or on SB reconnect, so the
+     * sync can still run (to clean up VRFs and routes) once the set
+     * becomes empty.  The start-up danger window in which an empty
+     * Advertised_Route view would delete routes installed before the
+     * restart is guarded by sb_all_data_loaded, which is false both
+     * during the start-up bootstrap and while the Advertised_Route
+     * table is reloaded after an SB reconnect. */
+    bool initial_sync_completed;
 };
 
 static void
@@ -5821,12 +5831,16 @@ en_route_exchange_run(struct engine_node *node, void *data)
      * exactly those rows is complete, we must not run the destructive kernel
      * sync: it deletes every OVN route it does not see, so a partial view
      * would delete routes we installed before a restart that have not
-     * reached our view yet. */
+     * reached our view yet.  With no local route-exchange datapaths there is
+     * no scoped dump to wait for, so once the first armed sync has run the
+     * view is complete and the sync may run to clean up the VRFs and routes
+     * of the removed datapaths. */
     bool have_local_re_datapaths =
         !hmap_is_empty(&route_data->announce_routes);
     bool ready = ctrl_ctx->sb_all_data_loaded
-                 && ctrl_ctx->sb_ar_condition_scoped
-                 && have_local_re_datapaths;
+                 && (have_local_re_datapaths
+                     ? ctrl_ctx->sb_ar_condition_scoped
+                     : re->initial_sync_completed);
 
     if (re->initial_routes_loaded && !ready) {
         /* The set of local route-exchange datapaths changed or the SB
@@ -5842,6 +5856,11 @@ en_route_exchange_run(struct engine_node *node, void *data)
             return EN_UNCHANGED;   /* still loading; kernel untouched */
         }
         re->initial_routes_loaded = true;
+        /* Past the start-up danger window from now on: the view has been
+         * complete enough to run the destructive sync once, so a later
+         * transition to an empty local route-exchange datapath set (the
+         * last dynamic-routing router removed) may run it to clean up. */
+        re->initial_sync_completed = true;
         VLOG_INFO("Advertised_Route dump complete for local route-exchange "
                   "datapaths; enabling route sync.");
         /* Fall through: run once now to reconcile the kernel. */
