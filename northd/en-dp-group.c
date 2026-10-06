@@ -89,9 +89,7 @@ dp_group_lflow_handler(struct engine_node *node,
     struct ed_type_global_config *global_config =
         engine_get_input_data("global_config", node);
 
-    if (hmapx_is_empty(&lflow_data->trk_data.dirty_lflow_refs) ||
-        lflow_data->trk_data.needs_full_sync) {
-
+    if (hmapx_is_empty(&lflow_data->trk_data.dirty_lflow_refs)) {
         dp_group_sync_to_sb(node, lflow_data);
         return EN_HANDLED_UPDATED;
     }
@@ -105,6 +103,27 @@ dp_group_lflow_handler(struct engine_node *node,
                                    global_config->ovn_internal_version_changed,
                                    sb_flow_table, sb_dpgrp_table)) {
             return EN_UNHANDLED;
+        }
+    }
+
+    /* Delete the SB rows for lflows that were orphaned in-memory by
+     * lflow_ref_unlink_and_prune() (IGMP/MLD and IC-learned service
+     * monitor flows).  lflow_ref_sync_lflows() cannot see them because the
+     * lflow (and its lflow_ref_node) has already been destroyed, so their
+     * SB uuids were recorded in deleted_sb_uuids and are deleted here.
+     *
+     * This is safe even when the orphaned lflow is re-added by a later
+     * build (e.g. the per-datapath multicast flood flow): the re-added lflow
+     * is a fresh in-memory object with a new random sb_uuid (the old one was
+     * destroyed), so its freshly inserted SB row is never in
+     * deleted_sb_uuids. */
+    struct uuidset_node *uuidset_node;
+    UUIDSET_FOR_EACH (uuidset_node, &lflow_data->trk_data.deleted_sb_uuids) {
+        const struct sbrec_logical_flow *sbflow =
+            sbrec_logical_flow_table_get_for_uuid(sb_flow_table,
+                                                  &uuidset_node->uuid);
+        if (sbflow) {
+            sbrec_logical_flow_delete(sbflow);
         }
     }
     return EN_HANDLED_UPDATED;

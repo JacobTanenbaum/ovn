@@ -743,10 +743,16 @@ lflow_ref_unlink_lflows(struct lflow_ref *lflow_ref,
  * whose referenced_by list is empty (no other lflow_ref references it).
  * Unlike lflow_ref_unlink_lflows (which only clears dp bits and sets
  * linked=false), this function removes the lrns and orphaned lflows
- * from the in-memory table entirely, without writing to SB. */
+ * from the in-memory table entirely, without writing to SB.
+ *
+ * Because the orphaned lflows are destroyed here (and so are not visible to a
+ * later lflow_ref_sync_lflows() pass), the SB uuid of every orphaned lflow
+ * that already has an SB row is recorded in 'deleted_sb_uuids' so the caller
+ * can delete those rows from SB after the incremental sync. */
 void
 lflow_ref_unlink_and_prune(struct lflow_ref *lflow_ref,
-                           struct lflow_table *lflow_table)
+                           struct lflow_table *lflow_table,
+                           struct uuidset *deleted_sb_uuids)
 {
     lflow_ref_unlink_lflows(lflow_ref, lflow_table);
 
@@ -756,6 +762,9 @@ lflow_ref_unlink_and_prune(struct lflow_ref *lflow_ref,
         lflow_ref_node_destroy(lrn);
 
         if (ovs_list_is_empty(&lflow->referenced_by)) {
+            if (!uuid_is_zero(&lflow->sb_uuid)) {
+                uuidset_insert(deleted_sb_uuids, &lflow->sb_uuid);
+            }
             enum ovn_datapath_type dp_type =
                 ovn_stage_to_datapath_type(lflow->stage);
             ovs_assert(dp_type < DP_MAX);
