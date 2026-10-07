@@ -291,6 +291,9 @@ static void ip_mcast_snoop_run(void)
 static void ip_mcast_querier_run(struct rconn *swconn,
                                  long long int *query_time);
 static void ip_mcast_querier_wait(long long int query_time);
+static size_t ip_mcast_querier_get_ports(int64_t dp_key,
+                                         struct mcast_querier_port *ports,
+                                         size_t *n_ports);
 static void ip_mcast_sync(
     struct ovsdb_idl_txn *ovnsb_idl_txn,
     const struct sbrec_chassis *chassis,
@@ -5436,6 +5439,30 @@ static struct hmap mcast_snoop_map OVS_GUARDED_BY(pinctrl_mutex);
  */
 static struct ovs_list mcast_query_list;
 
+/*
+ * Local-port fanout for the multicast querier.
+ *
+ * physical_run() (main thread) records, for each datapath, the local VIF
+ * ports the multicast flood group would deliver to.  The querier (run in the
+ * pinctrl_handler thread) then sends the query in batches of a bounded number
+ * of those ports instead of a single query via the flood group, so that OVS
+ * does not translate an unbounded per-port resubmit fan-out (which exceeds
+ * OVS's resubmit limit on nodes with many local ports and causes the query to
+ * be rejected with OFPFMFC_UNKNOWN).
+ *
+ * 'mcast_querier_ports' (dp_key -> struct mcast_querier_port_list) is written
+ * by the main thread and read by the handler thread, both while holding
+ * pinctrl_mutex.
+ */
+struct mcast_querier_port_list {
+    struct hmap_node hmap_node;
+    uint32_t dp_key;
+    size_t n_ports;
+    struct mcast_querier_port *ports;
+};
+
+static struct hmap mcast_querier_ports OVS_GUARDED_BY(pinctrl_mutex);
+
 /* Multicast config information stored independently by datapath key.
  * Protected by pinctrl_mutex. pinctrl_handler has RO access and pinctrl_main
  * has RW access. Read accesses from pinctrl_ip_mcast_handle() can be
@@ -5754,6 +5781,7 @@ ip_mcast_snoop_init(void)
     hmap_init(&mcast_snoop_map);
     ovs_list_init(&mcast_query_list);
     hmap_init(&mcast_cfg_map);
+    hmap_init(&mcast_querier_ports);
 }
 
 static void
@@ -5772,6 +5800,14 @@ ip_mcast_snoop_destroy(void)
     HMAP_FOR_EACH_POP (ip_ms_state, hmap_node, &mcast_cfg_map) {
         free(ip_ms_state);
     }
+
+    struct mcast_querier_port_list *port_list;
+
+    HMAP_FOR_EACH_POP (port_list, hmap_node, &mcast_querier_ports) {
+        free(port_list->ports);
+        free(port_list);
+    }
+    hmap_destroy(&mcast_querier_ports);
 }
 
 static void
@@ -6204,10 +6240,12 @@ pinctrl_ip_mcast_handle(struct rconn *swconn,
     }
 }
 
-static void
-ip_mcast_querier_send_igmp(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
+/* Composes an IGMPv3 multicast query into 'buf' (up to 'buf_size' bytes) and
+ * returns its length in bytes. */
+static size_t
+ip_mcast_querier_compose_igmp(struct ip_mcast_snoop *ip_ms, void *buf,
+                              size_t buf_size)
 {
-    /* Compose a multicast query. */
     uint64_t packet_stub[128 / 8];
     struct dp_packet packet;
 
@@ -6223,35 +6261,21 @@ ip_mcast_querier_send_igmp(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
     uint8_t qqic = max_response;
     packet_set_igmp3_query(&packet, max_response, 0, false, 0, qqic);
 
-    /* Inject multicast query. */
-    uint64_t ofpacts_stub[4096 / 8];
-    struct ofpbuf ofpacts = OFPBUF_STUB_INITIALIZER(ofpacts_stub);
-    enum ofp_version version = rconn_get_version(swconn);
-    put_load(ip_ms->dp_key, MFF_LOG_DATAPATH, 0, 64, &ofpacts);
-    put_load(OVN_MCAST_FLOOD_TUNNEL_KEY, MFF_LOG_OUTPORT, 0, 32, &ofpacts);
-    put_load(1, MFF_LOG_FLAGS, MLF_LOCAL_ONLY, 1, &ofpacts);
-    struct ofpact_resubmit *resubmit = ofpact_put_RESUBMIT(&ofpacts);
-    resubmit->in_port = OFPP_CONTROLLER;
-    resubmit->table_id = OFTABLE_LOCAL_OUTPUT;
-
-    struct ofputil_packet_out po = {
-        .packet = dp_packet_data(&packet),
-        .packet_len = dp_packet_size(&packet),
-        .buffer_id = UINT32_MAX,
-        .ofpacts = ofpacts.data,
-        .ofpacts_len = ofpacts.size,
-    };
-    match_set_in_port(&po.flow_metadata, OFPP_CONTROLLER);
-    enum ofputil_protocol proto = ofputil_protocol_from_ofp_version(version);
-    queue_msg(swconn, ofputil_encode_packet_out(&po, proto));
+    size_t size = dp_packet_size(&packet);
+    if (size > buf_size) {
+        size = buf_size;
+    }
+    memcpy(buf, dp_packet_data(&packet), size);
     dp_packet_uninit(&packet);
-    ofpbuf_uninit(&ofpacts);
+    return size;
 }
 
-static void
-ip_mcast_querier_send_mld(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
+/* Composes an MLDv2 multicast query into 'buf' (up to 'buf_size' bytes) and
+ * returns its length in bytes. */
+static size_t
+ip_mcast_querier_compose_mld(struct ip_mcast_snoop *ip_ms, void *buf,
+                             size_t buf_size)
 {
-    /* Compose a multicast query. */
     uint64_t packet_stub[128 / 8];
     struct dp_packet packet;
 
@@ -6273,10 +6297,26 @@ ip_mcast_querier_send_mld(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
     struct in6_addr unspecified = { { { 0 } } };
     packet_set_mld_query(&packet, max_response, &unspecified, false, 0, qqic);
 
-    /* Inject multicast query. */
+    size_t size = dp_packet_size(&packet);
+    if (size > buf_size) {
+        size = buf_size;
+    }
+    memcpy(buf, dp_packet_data(&packet), size);
+    dp_packet_uninit(&packet);
+    return size;
+}
+
+/* Injects the query composed in 'query' ('query_len' bytes) through the
+ * multicast flood group.  This is the traditional single-query behavior: OVS
+ * translates it by resubmitting once per local port of the flood group.  Only
+ * used as a fallback until the per-port fan-out is available. */
+static void
+ip_mcast_querier_send_flood_query(struct rconn *swconn,
+                                  struct ip_mcast_snoop *ip_ms,
+                                  const void *query, size_t query_len)
+{
     uint64_t ofpacts_stub[4096 / 8];
     struct ofpbuf ofpacts = OFPBUF_STUB_INITIALIZER(ofpacts_stub);
-    enum ofp_version version = rconn_get_version(swconn);
     put_load(ip_ms->dp_key, MFF_LOG_DATAPATH, 0, 64, &ofpacts);
     put_load(OVN_MCAST_FLOOD_TUNNEL_KEY, MFF_LOG_OUTPORT, 0, 32, &ofpacts);
     put_load(1, MFF_LOG_FLAGS, MLF_LOCAL_ONLY, 1, &ofpacts);
@@ -6285,17 +6325,149 @@ ip_mcast_querier_send_mld(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
     resubmit->table_id = OFTABLE_LOCAL_OUTPUT;
 
     struct ofputil_packet_out po = {
-        .packet = dp_packet_data(&packet),
-        .packet_len = dp_packet_size(&packet),
+        .packet = query,
+        .packet_len = query_len,
         .buffer_id = UINT32_MAX,
         .ofpacts = ofpacts.data,
         .ofpacts_len = ofpacts.size,
     };
     match_set_in_port(&po.flow_metadata, OFPP_CONTROLLER);
-    enum ofputil_protocol proto = ofputil_protocol_from_ofp_version(version);
+    enum ofputil_protocol proto = ofputil_protocol_from_ofp_version(
+        rconn_get_version(swconn));
     queue_msg(swconn, ofputil_encode_packet_out(&po, proto));
-    dp_packet_uninit(&packet);
     ofpbuf_uninit(&ofpacts);
+}
+
+/* Maximum number of local ports bundled into a single querier PACKET_OUT.
+ *
+ * Each port in a batch is emitted as (load CT_ZONE, if set) + load OUTPORT +
+ * resubmit(CHECK_LOOPBACK).  OVS translates a batch by resubmitting once per
+ * port through the egress pipeline, and the translation's resubmit counter
+ * accumulates across all ports in the batch against ofproto's MAX_RESUBMITS
+ * (4096) budget.  The per-port egress path is a fixed ~19 resubmits, so a
+ * batch of 100 ports uses ~1900 of the 4096 budget, safely under the limit.
+ * Bundling keeps each OVS translation bounded (a single flood-group query of
+ * all ~330 ports would use ~6300 resubmits and be rejected) while reducing the
+ * number of OpenFlow PACKET_OUT messages to ceil(n_ports / 100). */
+#define MCAST_QUERIER_PORT_BATCH 100
+
+/* Sends 'query' ('query_len' bytes) to each port in 'ports' (0 to
+ * 'n_ports'), in batches of at most MCAST_QUERIER_PORT_BATCH ports per
+ * PACKET_OUT.  Each port in a batch uses the same per-port actions the flood
+ * group would apply for that port (load the port's conntrack zone, set the
+ * logical output port, resubmit to the CHECK_LOOPBACK table), so every port's
+ * query traverses the per-port egress pipeline exactly like the flood group
+ * delivery would.  Bounding each PACKET_OUT to a fixed number of ports keeps
+ * each OVS translation under OVS's resubmit limit (which a single flood-group
+ * query of all local ports would exceed) while reducing the number of
+ * OpenFlow messages. */
+static void
+ip_mcast_querier_send_port_fanout(struct rconn *swconn,
+                                  struct ip_mcast_snoop *ip_ms,
+                                  const void *query, size_t query_len,
+                                  const struct mcast_querier_port *ports,
+                                  size_t n_ports)
+{
+    enum ofputil_protocol proto = ofputil_protocol_from_ofp_version(
+        rconn_get_version(swconn));
+
+    for (size_t start = 0; start < n_ports;
+         start += MCAST_QUERIER_PORT_BATCH) {
+        size_t end = MIN(start + MCAST_QUERIER_PORT_BATCH, n_ports);
+
+        struct ofpbuf ofpacts;
+        ofpbuf_init(&ofpacts, 0);
+        put_load(ip_ms->dp_key, MFF_LOG_DATAPATH, 0, 64, &ofpacts);
+        for (size_t i = start; i < end; i++) {
+            const struct mcast_querier_port *port = &ports[i];
+
+            if (port->ct_zone) {
+                put_load(port->ct_zone, MFF_LOG_CT_ZONE, 0, 16, &ofpacts);
+            }
+            put_load(port->port_key, MFF_LOG_OUTPORT, 0, 32, &ofpacts);
+            struct ofpact_resubmit *resubmit = ofpact_put_RESUBMIT(&ofpacts);
+            resubmit->in_port = OFPP_CONTROLLER;
+            resubmit->table_id = OFTABLE_CHECK_LOOPBACK;
+        }
+
+        struct ofputil_packet_out po = {
+            .packet = query,
+            .packet_len = query_len,
+            .buffer_id = UINT32_MAX,
+            .ofpacts = ofpacts.data,
+            .ofpacts_len = ofpacts.size,
+        };
+        match_set_in_port(&po.flow_metadata, OFPP_CONTROLLER);
+        queue_msg(swconn, ofputil_encode_packet_out(&po, proto));
+        ofpbuf_uninit(&ofpacts);
+    }
+}
+
+/* Fetches the local ports published by physical_run() for datapath 'dp_key'.
+ * Returns a newly allocated array of 'n_ports' entries (caller must free), or
+ * NULL when no ports are known yet. */
+static struct mcast_querier_port *
+ip_mcast_querier_fetch_ports(int64_t dp_key, size_t *n_ports)
+{
+    size_t n = ip_mcast_querier_get_ports(dp_key, NULL, NULL);
+    if (!n) {
+        *n_ports = 0;
+        return NULL;
+    }
+    struct mcast_querier_port *ports = xmalloc(n * sizeof *ports);
+    ip_mcast_querier_get_ports(dp_key, ports, &n);
+    *n_ports = n;
+    return ports;
+}
+
+/* Sends an IGMPv3 multicast query to all local ports of the datapath's
+ * multicast flood group.  If the per-port list published by physical_run() is
+ * available, the query is fanned out to each port in batches of a bounded
+ * number of ports per OpenFlow message; otherwise a single query is sent
+ * through the flood group (the legacy behavior). */
+static void
+ip_mcast_querier_send_igmp(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
+{
+    char query_buf[128];
+    size_t query_len = ip_mcast_querier_compose_igmp(ip_ms, query_buf,
+                                                     sizeof query_buf);
+
+    size_t n_ports;
+    struct mcast_querier_port *ports =
+        ip_mcast_querier_fetch_ports(ip_ms->dp_key, &n_ports);
+    if (ports) {
+        ip_mcast_querier_send_port_fanout(swconn, ip_ms, query_buf,
+                                          query_len, ports, n_ports);
+        free(ports);
+    } else {
+        ip_mcast_querier_send_flood_query(swconn, ip_ms, query_buf,
+                                          query_len);
+    }
+}
+
+/* Sends an MLDv2 multicast query to all local ports of the datapath's
+ * multicast flood group.  If the per-port list published by physical_run() is
+ * available, the query is fanned out to each port in batches of a bounded
+ * number of ports per OpenFlow message; otherwise a single query is sent
+ * through the flood group (the legacy behavior). */
+static void
+ip_mcast_querier_send_mld(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
+{
+    char query_buf[128];
+    size_t query_len = ip_mcast_querier_compose_mld(ip_ms, query_buf,
+                                                    sizeof query_buf);
+
+    size_t n_ports;
+    struct mcast_querier_port *ports =
+        ip_mcast_querier_fetch_ports(ip_ms->dp_key, &n_ports);
+    if (ports) {
+        ip_mcast_querier_send_port_fanout(swconn, ip_ms, query_buf,
+                                          query_len, ports, n_ports);
+        free(ports);
+    } else {
+        ip_mcast_querier_send_flood_query(swconn, ip_ms, query_buf,
+                                          query_len);
+    }
 }
 
 static long long int
@@ -6347,6 +6519,79 @@ ip_mcast_querier_wait(long long int query_time)
     if (!ovs_list_is_empty(&mcast_query_list)) {
         poll_timer_wait_until(query_time);
     }
+}
+
+/* Records, for datapath 'dp_key', the local ports that the multicast flood
+ * group delivers to.  'port_keys' may be NULL, in which case an empty list is
+ * stored (so that a datapath whose flood group no longer has any local ports
+ * does not keep a stale list from a previous pass).
+ *
+ * Called from the main thread (physical_run) while it iterates the
+ * multicast groups.  Takes pinctrl_mutex internally, so the caller must not
+ * already hold it.
+ */
+void
+pinctrl_mcast_querier_set_ports(int64_t dp_key,
+                                const struct mcast_querier_port *ports,
+                                size_t n_ports)
+{
+    ovs_mutex_lock(&pinctrl_mutex);
+
+    struct mcast_querier_port_list *list;
+    HMAP_FOR_EACH (list, hmap_node, &mcast_querier_ports) {
+        if (list->dp_key == dp_key) {
+            break;
+        }
+    }
+    if (!list) {
+        list = xzalloc(sizeof *list);
+        list->dp_key = dp_key;
+        hmap_insert(&mcast_querier_ports, &list->hmap_node,
+                    ip_mcast_snoop_hash(dp_key));
+    }
+
+    free(list->ports);
+    if (n_ports) {
+        list->ports = xmalloc(n_ports * sizeof *list->ports);
+        memcpy(list->ports, ports, n_ports * sizeof *list->ports);
+    } else {
+        list->ports = NULL;
+    }
+    list->n_ports = n_ports;
+
+    ovs_mutex_unlock(&pinctrl_mutex);
+}
+
+/* Returns the number of local ports the querier should fan out to for
+ * datapath 'dp_key' (0 if none are known yet), and, when 'ports' and
+ * 'n_ports' are non-NULL, copies up to *n_ports of them into 'ports' and
+ * updates *n_ports to the number copied.
+ *
+ * Called from the pinctrl_handler thread.  Takes pinctrl_mutex internally.
+ */
+static size_t
+ip_mcast_querier_get_ports(int64_t dp_key, struct mcast_querier_port *ports,
+                           size_t *n_ports)
+{
+    ovs_mutex_lock(&pinctrl_mutex);
+
+    size_t n = 0;
+    struct mcast_querier_port_list *list;
+    HMAP_FOR_EACH (list, hmap_node, &mcast_querier_ports) {
+        if (list->dp_key != dp_key) {
+            continue;
+        }
+        n = list->n_ports;
+        if (ports && n_ports) {
+            size_t count = MIN(n, *n_ports);
+            memcpy(ports, list->ports, count * sizeof *ports);
+            *n_ports = count;
+        }
+        break;
+    }
+
+    ovs_mutex_unlock(&pinctrl_mutex);
+    return n;
 }
 
 static void
