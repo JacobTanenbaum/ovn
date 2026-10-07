@@ -86,4 +86,35 @@ void send_self_originated_neigh_packet(struct rconn *swconn,
                                        struct in6_addr *local,
                                        struct in6_addr *target,
                                        uint8_t table_id);
+
+/* A local port that the multicast flood group would deliver a query to, along
+ * with the conntrack zone that the flood group's per-port action loads. */
+struct mcast_querier_port {
+    uint32_t port_key;
+    uint16_t ct_zone;
+};
+
+/* Multicast querier local-port fanout.
+ *
+ * Instead of the querier injecting a single IGMP/MLD query via the multicast
+ * flood group (which OVS translates by resubmitting once per local port,
+ * exceeding OVS's resubmit limit on nodes with many local ports and causing
+ * the query to be rejected with OFPFMFC_UNKNOWN), the querier injects the
+ * query in batches of a bounded number of local ports per OpenFlow message.
+ * Each port in a batch is injected the same way a single port of the flood
+ * group would be: load the port's conntrack zone, set the logical output port,
+ * and resubmit to the CHECK_LOOPBACK table.  Bounding each message to a fixed
+ * number of ports keeps each OVS translation under OVS's resubmit limit while
+ * reducing the number of OpenFlow messages.
+ *
+ * The physical node (physical_run and the mc group changes handler) knows
+ * exactly which local ports the flood group would deliver to; it publishes
+ * them here so the pinctrl_handler thread can fan the query out per port.
+ *
+ * Called from the main thread; read by the handler thread (the querier).
+ * Takes pinctrl_mutex internally.
+ */
+void pinctrl_mcast_querier_set_ports(int64_t dp_key,
+                                     const struct mcast_querier_port *ports,
+                                     size_t n_ports);
 #endif /* controller/pinctrl.h */
