@@ -3319,6 +3319,62 @@ OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1235: connected' hv1/ovn-controller.log])
 OVN_CLEANUP([hv1])
 AT_CLEANUP
 
+AT_SETUP([ovn-controller - br-int remote primary])
+AT_KEYWORDS([ovn])
+ovn_start
+
+net_add n1
+sim_add hv1
+ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.20
+ovs-vsctl -- add-port br-int vif1 -- \
+    set interface vif1 external-ids:iface-id=vif1
+
+# Set the br-int remote and wait for the connection
+#check ovs-vsctl set-controller br-int ptcp:1234
+#check ovs-vsctl -- \
+#    set open . external-ids:ovn-bridge-remote="tcp:127.0.0.1:1234" -- \
+#    set open . external-ids:ovn-bridge-remote-probe-interval=5000
+ovs-vsctl --id=@controller create controller target=\"ptcp:1234\" type=primary -- set bridge br-int controller=@controller
+
+ovs-vsctl -- \
+    set open . external-ids:ovn-bridge-remote="tcp:127.0.0.1:1234" -- \
+    set open . external-ids:ovn-bridge-remote-probe-interval=5000
+
+OVS_WAIT_UNTIL([test $(grep -c 'connecting to switch: "tcp:127.0.0.1:1234"' hv1/ovn-controller.log) = 4])
+OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1234: connected' hv1/ovn-controller.log])
+#ovs-vsctl list controller
+controller_UUID=$(ovs-vsctl --data=bare --no-headings --columns=controller find bridge name=br-int)
+echo $controller_UUID
+check ovs-vsctl set Controller $controller_UUID inactivity_probe=6000
+check as hv1 ovn-appctl -t ovn-controller debug/pause
+OVS_WAIT_UNTIL([grep -q 'no response to inactivity probe after 6 seconds' hv1/ovs-vswitchd.log])
+check as hv1 ovn-appctl -t ovn-controller debug/resume
+
+check ovn-nbctl ls-add sw0
+
+check ovn-nbctl lsp-add sw0 vif1
+check ovn-nbctl lsp-set-addresses vif1 "00:00:00:00:00:01 192.168.0.10 1000::10"
+
+wait_for_ports_up
+check ovn-nbctl --wait=hv sync
+
+check ovs-vsctl -- \
+    remove open . external-ids ovn-bridge-remote -- \
+    remove open . external-ids ovn-bridge-remote-probe-interval
+
+check ovs-vsctl del-controller br-int
+
+# Set different br-int remote and wait for the connection
+check ovs-vsctl set-controller br-int ptcp:1235
+check ovs-vsctl -- \
+    set open . external-ids:ovn-bridge-remote="tcp:127.0.0.1:1235"
+
+OVS_WAIT_UNTIL([test $(grep -c 'connecting to switch: "tcp:127.0.0.1:1235"' hv1/ovn-controller.log) = 4])
+OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1235: connected' hv1/ovn-controller.log])
+
+OVN_CLEANUP([hv1])
+AT_CLEANUP
 AT_SETUP([ovn-controller - br-int flow table prefixes])
 AT_KEYWORDS([ovn-controller prefixes])
 ovn_start
