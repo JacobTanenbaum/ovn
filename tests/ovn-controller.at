@@ -3294,6 +3294,16 @@ check ovs-vsctl -- \
 OVS_WAIT_UNTIL([test $(grep -c 'connecting to switch: "tcp:127.0.0.1:1234"' hv1/ovn-controller.log) = 4])
 OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1234: connected' hv1/ovn-controller.log])
 
+controller_UUID=$(ovs-vsctl --data=bare --no-headings --columns=controller find bridge name=br-int)
+echo $controller_UUID
+check ovs-vsctl set Controller $controller_UUID inactivity_probe=6000
+check as hv1 ovn-appctl -t ovn-controller debug/pause
+
+
+##statctrl and pinctrl connections timeout
+OVS_WAIT_UNTIL([test $(grep -c 'no response to inactivity probe after 6 seconds' hv1/ovs-vswitchd.log) = 2])
+check as hv1 ovn-appctl -t ovn-controller debug/resume
+
 check ovn-nbctl ls-add sw0
 
 check ovn-nbctl lsp-add sw0 vif1
@@ -3316,7 +3326,8 @@ check ovs-vsctl -- \
 OVS_WAIT_UNTIL([test $(grep -c 'connecting to switch: "tcp:127.0.0.1:1235"' hv1/ovn-controller.log) = 4])
 OVS_WAIT_UNTIL([grep -q 'tcp:127.0.0.1:1235: connected' hv1/ovn-controller.log])
 
-OVN_CLEANUP([hv1])
+OVN_CLEANUP([hv1
+/no response to inactivity probe after .* seconds, disconnecting/d])
 AT_CLEANUP
 
 AT_SETUP([ovn-controller - br-int remote primary])
