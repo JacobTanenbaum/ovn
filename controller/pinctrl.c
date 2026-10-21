@@ -5934,6 +5934,23 @@ ip_mcast_sync(struct ovsdb_idl_txn *ovnsb_idl_txn,
         }
     }
 
+    /* Then remove the querier port lists of datapaths that no longer exist,
+     * so that they do not accumulate in 'mcast_querier_ports' for the
+     * lifetime of the controller.  Datapaths that still exist but are not
+     * local to this chassis keep their lists, as physical_run() republishes
+     * them on every run. */
+    struct mcast_querier_port_list *port_list;
+    HMAP_FOR_EACH_SAFE (port_list, hmap_node, &mcast_querier_ports) {
+        const struct sbrec_datapath_binding *sbrec_dp =
+            datapath_lookup_by_key(sbrec_datapath_binding_by_key,
+                                   port_list->dp_key);
+        if (!sbrec_dp || sbrec_datapath_binding_is_deleted(sbrec_dp)) {
+            hmap_remove(&mcast_querier_ports, &port_list->hmap_node);
+            free(port_list->ports);
+            free(port_list);
+        }
+    }
+
     const struct sbrec_igmp_group *sbrec_ip_mrouter;
     const struct sbrec_igmp_group *sbrec_igmp;
 
