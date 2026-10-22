@@ -26165,9 +26165,20 @@ AT_KEYWORDS([slowtest])
 ovn_start
 
 dnl A single chassis with a large number of local VIFs on one logical
-dnl switch.  The querier must deliver its queries to every local port,
-dnl which requires more pipeline traversals than a single flood-group
-dnl PACKET_OUT can provide within OVS's MAX_RESUBMITS budget.
+dnl switch.  Each port's querier query egress translation uses ~19
+dnl resubmits, so delivering the queries to all 250 local ports in a
+dnl single flood-group PACKET_OUT would exceed OVS's MAX_RESUBMITS
+dnl (4096) budget.  Instead, the querier sends one PACKET_OUT per
+dnl batch of at most 100 ports.  Verify end to end that (1) every
+dnl local port receives both the IGMP and the MLD queries, with the
+dnl right contents, and (2) the number of OFPT_PACKET_OUT messages
+dnl matches the batch count: three per query type with 250 local
+dnl ports, two with 101, one with 100.
+dnl
+dnl sim_add() starts ovs-vswitchd with -vvconn, so every OpenFlow
+dnl message received from ovn-controller is dumped to
+dnl ovs-vswitchd.log.  Counting the "received: OFPT_PACKET_OUT" log
+dnl lines therefore counts the messages the querier actually sent.
 
 n_ports=250
 
@@ -26217,12 +26228,14 @@ fi
 wait_for_ports_up
 check ovn-nbctl --wait=hv sync
 
-# Enable multicast snooping and querier on ls1 and set the query
-# interval to minimum.
+# Enable multicast snooping and querier on ls1.  Use the maximum
+# query interval so that only the immediate query round fired when
+# the querier is enabled (and, later, when the interval changes)
+# happens during the test.
 check ovn-nbctl --wait=hv set Logical_Switch ls1 \
     other_config:mcast_snoop="true" \
     other_config:mcast_querier="true" \
-    other_config:mcast_query_interval=1 \
+    other_config:mcast_query_interval=3600 \
     other_config:mcast_eth_src="00:00:00:00:02:fe" \
     other_config:mcast_ip4_src="20.0.0.254" \
     other_config:mcast_ip6_src="fe80::fe"
@@ -26236,12 +26249,11 @@ AS_BOX([Querier queries are fanned out to all local ports])
 dnl Every local port has its own output flow in table 89, the last
 dnl logical egress table.  The querier sends one IGMP query and one
 dnl MLD query per port per round, so once each per-port flow has
-dnl counted at least two packets, every local port has received both
+dnl counted both packets, every local port has received both
 dnl queries.
 OVS_WAIT_UNTIL(
   [test $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep -c "metadata=0x$dp_key ") -eq $n_ports \
-       -a $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep "metadata=0x$dp_key " | grep -c "n_packets=0,") -eq 0 \
-       -a $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep "metadata=0x$dp_key " | grep -c "n_packets=1,") -eq 0],
+       -a $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep "metadata=0x$dp_key " | grep -c "n_packets=2,") -eq $n_ports],
   [as hv1 ovs-ofctl dump-flows br-int table=89])
 
 AS_BOX([Querier query contents])
@@ -26276,35 +26288,23 @@ OVS_WAIT_UNTIL(
                  'hv1/vif250-tx.pcap expected'],
   [$at_diff -F'^---' exp rcv])
 
-OVN_CLEANUP([hv1])
-AT_CLEANUP
-])
+AS_BOX([250 local ports require three messages per query type])
+dnl One round over 250 local ports: 3 batches of IGMP + 3 batches
+dnl of MLD, i.e. 6 OFPT_PACKET_OUT messages in total.  The round is
+dnl known to be fully delivered at this point (see above), so the
+dnl count is exact.
+OVS_WAIT_UNTIL(
+  [test $(grep -c "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log) -eq 6],
+  [grep "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log])
 
-OVN_FOR_EACH_NORTHD([
-AT_SETUP([IGMP/MLD querier per-port query fan-out batch boundaries])
-AT_KEYWORDS([IP-multicast snoop querier])
-AT_KEYWORDS([slowtest])
-
-ovn_start
-
-dnl The querier bundles local ports into batches of at most 100 ports
-dnl per OpenFlow message.  Verify the batch boundary end to end: with
-dnl 101 local ports each query type (IGMP and MLD) must be sent in two
-dnl messages, and with 100 local ports in one.
-dnl
-dnl sim_add() starts ovs-vswitchd with -vvconn, so every OpenFlow
-dnl message received from ovn-controller is dumped to
-dnl ovs-vswitchd.log.  Counting the "received: OFPT_PACKET_OUT" log
-dnl lines therefore counts the messages the querier actually sent.
-
-n_ports=101
-
-check ovn-nbctl ls-add ls1
-
-# Create the VIF ports on ls1 in batches.
+AS_BOX([101 local ports require two messages per query type])
+dnl Drop the ports above 101.  Changing the query interval triggers
+dnl an immediate next query round (see ip_mcast_snoop_configure() in
+dnl ovn-controller), now over the 101 remaining ports, i.e. two
+dnl messages per query type, four in total.
 batch=""
-for i in $(seq 1 $n_ports); do
-    batch="$batch -- lsp-add ls1 ls1-p$i"
+for i in $(seq 102 $n_ports); do
+    batch="$batch -- lsp-del ls1-p$i"
     if test $((i % 50)) -eq 0; then
         check ovn-nbctl $batch
         batch=""
@@ -26314,18 +26314,9 @@ if test -n "$batch"; then
     check ovn-nbctl $batch
 fi
 
-net_add n1
-sim_add hv1
-as hv1
-check ovs-vsctl add-br br-phys
-ovn_attach n1 br-phys 192.168.0.1
-check ovs-vsctl set open . external-ids:ovn-bridge-mappings=phys:br-phys
-
-# Create the VIFs in batches.
 batch=""
-for i in $(seq 1 $n_ports); do
-    batch="$batch -- add-port br-int hv1-vif$i -- \
-        set interface hv1-vif$i external-ids:iface-id=ls1-p$i"
+for i in $(seq 102 $n_ports); do
+    batch="$batch -- del-port br-int hv1-vif$i"
     if test $((i % 25)) -eq 0; then
         check ovs-vsctl $batch
         batch=""
@@ -26335,63 +26326,38 @@ if test -n "$batch"; then
     check ovs-vsctl $batch
 fi
 
-wait_for_ports_up
-check ovn-nbctl --wait=hv sync
-
-# Enable multicast snooping and querier on ls1.  Use the maximum
-# query interval so that only the immediate query round fired when
-# the querier is enabled (and, later, when the interval changes)
-# happens during the test.
-check ovn-nbctl --wait=hv set Logical_Switch ls1 \
-    other_config:mcast_snoop="true" \
-    other_config:mcast_querier="true" \
-    other_config:mcast_query_interval=3600 \
-    other_config:mcast_eth_src="00:00:00:00:02:fe" \
-    other_config:mcast_ip4_src="20.0.0.254" \
-    other_config:mcast_ip6_src="fe80::fe"
-
-# Wait for pinctrl thread to be connected
-OVS_WAIT_UNTIL([grep pinctrl hv1/ovn-controller.log | grep -c connected])
-
-dp_key=$(printf "%x" $(fetch_column Datapath_Binding tunnel_key external_ids:name=ls1))
-
-AS_BOX([101 local ports require two messages per query type])
-dnl One query round delivers one IGMP query and one MLD query to all
-dnl local ports.  Each query is bundled in batches of at most 100
-dnl ports, so with 101 ports the round sends four OFPT_PACKET_OUT
-dnl messages.  Wait for the round to be fully delivered (every
-dnl per-port output flow in table 89 has counted both queries)
-dnl before counting the messages.
-OVS_WAIT_UNTIL(
-  [test $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep -c "metadata=0x$dp_key ") -eq $n_ports \
-       -a $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep "metadata=0x$dp_key " | grep -c "n_packets=2,") -eq $n_ports],
-  [as hv1 ovs-ofctl dump-flows br-int table=89])
-
-dnl One round over 101 local ports: 2 batches of IGMP + 2 batches
-dnl of MLD, i.e. 4 OFPT_PACKET_OUT messages in total.
-OVS_WAIT_UNTIL(
-  [test $(grep -c "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log) -eq 4],
-  [grep "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log])
-
-AS_BOX([100 local ports require one message per query type])
-dnl Drop one local port.  Changing the query interval triggers an
-dnl immediate next query round (see ip_mcast_snoop_configure() in
-dnl ovn-controller), now over the 100 remaining ports, i.e. one
-dnl message per query type, two in total.
-check ovn-nbctl lsp-del ls1-p$n_ports
-check ovs-vsctl --if-exists del-port br-int hv1-vif$n_ports
 check ovn-nbctl --wait=hv sync
 check ovn-nbctl --wait=hv set Logical_Switch ls1 other_config:mcast_query_interval=1800
 
 OVS_WAIT_UNTIL(
-  [test $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep -c "metadata=0x$dp_key ") -eq 100 \
-       -a $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep "metadata=0x$dp_key " | grep -c "n_packets=4,") -eq 100],
+  [test $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep -c "metadata=0x$dp_key ") -eq 101 \
+       -a $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep "metadata=0x$dp_key " | grep -c "n_packets=4,") -eq 101],
   [as hv1 ovs-ofctl dump-flows br-int table=89])
 
-dnl Two rounds in total: 4 messages from the 101-port round plus
-dnl 1 batch of IGMP + 1 batch of MLD over the 100 remaining ports.
+dnl Two rounds in total: 6 messages from the 250-port round plus 2
+dnl batches of IGMP + 2 batches of MLD over the 101 remaining ports.
 OVS_WAIT_UNTIL(
-  [test $(grep -c "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log) -eq 6],
+  [test $(grep -c "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log) -eq 10],
+  [grep "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log])
+
+AS_BOX([100 local ports require one message per query type])
+dnl Drop one more local port.  Changing the query interval again
+dnl triggers another immediate query round, now over the 100
+dnl remaining ports, i.e. one message per query type, two in total.
+check ovn-nbctl lsp-del ls1-p101
+check ovs-vsctl --if-exists del-port br-int hv1-vif101
+check ovn-nbctl --wait=hv sync
+check ovn-nbctl --wait=hv set Logical_Switch ls1 other_config:mcast_query_interval=900
+
+OVS_WAIT_UNTIL(
+  [test $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep -c "metadata=0x$dp_key ") -eq 100 \
+       -a $(as hv1 ovs-ofctl dump-flows br-int table=89 | grep "metadata=0x$dp_key " | grep -c "n_packets=6,") -eq 100],
+  [as hv1 ovs-ofctl dump-flows br-int table=89])
+
+dnl Three rounds in total: the 6 + 4 messages above plus 1 batch of
+dnl IGMP + 1 batch of MLD over the 100 remaining ports.
+OVS_WAIT_UNTIL(
+  [test $(grep -c "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log) -eq 12],
   [grep "received: OFPT_PACKET_OUT" hv1/ovs-vswitchd.log])
 
 OVN_CLEANUP([hv1])

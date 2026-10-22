@@ -2922,8 +2922,7 @@ mc_ofctrl_add_flow(const struct sbrec_multicast_group *mc,
     ofpbuf_clear(&ctx->ofpacts);
 }
 
-/* Appends (port_key, ct_zone) to 'flood_ports', which must have room for
- * one more entry. */
+/* Appends (port_key, ct_zone) to the array of flood_ports. */
 static void
 flood_querier_port_add(struct mcast_querier_port *flood_ports,
                        size_t *n_flood_ports, uint32_t port_key,
@@ -2959,9 +2958,6 @@ consider_mc_group(const struct physical_ctx *ctx,
     struct sset remote_chassis = SSET_INITIALIZER(&remote_chassis);
     struct sset vtep_chassis = SSET_INITIALIZER(&vtep_chassis);
 
-    /* Collect the local ports of the flood group to publish to the querier,
-     * which sends the query to each port directly (see
-     * pinctrl_mcast_querier_set_ports). */
     struct mcast_querier_port *flood_ports = NULL;
     size_t n_flood_ports = 0;
     if (mc->tunnel_key == OVN_MCAST_FLOOD_TUNNEL_KEY) {
@@ -3109,6 +3105,7 @@ consider_mc_group(const struct physical_ctx *ctx,
         }
     }
 
+    /* Publish the local ports of the flood group to the querier. */
     if (flood_ports) {
         pinctrl_mcast_querier_set_ports(mc->datapath->tunnel_key, flood_ports,
                                         n_flood_ports);

@@ -5440,11 +5440,6 @@ static struct ovs_list mcast_query_list;
  * Local ports of each datapath's multicast flood group, published by
  * physical_run() (main thread) for the querier (pinctrl_handler thread).
  *
- * The querier sends its queries directly to these ports in batches rather
- * than through the flood group, because OVS translates a flood-group query
- * with one resubmit per port, exceeding its resubmit limit on nodes with
- * many local ports and dropping the query.
- *
  * An entry exists once the datapath's flood group has been considered at
  * least once and may be empty when the flood group has no local ports on
  * this chassis.  Both threads access the hmap under pinctrl_mutex.
@@ -6318,15 +6313,14 @@ ip_mcast_querier_compose_mld(struct ip_mcast_snoop *ip_ms, void *buf,
     return size;
 }
 
-/* Number of local ports per querier PACKET_OUT.  Each port's egress
- * translation uses ~19 resubmits, so a batch of 100 stays within OVS's
- * MAX_RESUBMITS (4096) budget. */
+/* Number of local ports per querier PACKET_OUT.  
+ *
+ * The MCAST_QUERIER_PORT_BATCH * resubmits in egress pipeline must be 
+ * less than MAX_RESUBMITS. */
 #define MCAST_QUERIER_PORT_BATCH 100
 
-/* Sends 'query' ('query_len' bytes) to each port in 'ports' (0 to
- * 'n_ports') in batches of at most MCAST_QUERIER_PORT_BATCH ports per
- * PACKET_OUT, using the same per-port actions the flood group would apply,
- * so each port's query traverses the per-port egress pipeline. */
+/* Sends query to each port in ports in batches of at most 
+ * MCAST_QUERIER_PORT_BATCH ports per PACKET_OUT. */
 static void
 ip_mcast_querier_send_port_fanout(struct rconn *swconn,
                                   struct ip_mcast_snoop *ip_ms,
@@ -6369,9 +6363,9 @@ ip_mcast_querier_send_port_fanout(struct rconn *swconn,
     }
 }
 
-/* Returns a copy of the local ports published for datapath 'dp_key' (the
- * caller must free it), or NULL if the list has not been published yet or
- * is empty, reporting through 'published' whether it has been published.
+/* Returns a copy of the local ports published for datapath dp_key or NULL if
+ * the list has not been published yet or is empty and if the list of local
+ * ports has been published.
  *
  * Takes pinctrl_mutex internally. */
 static struct mcast_querier_port *
@@ -6404,7 +6398,7 @@ ip_mcast_querier_fetch_ports(int64_t dp_key, size_t *n_ports, bool *published)
 }
 
 /* Composes and sends the IGMPv3 and MLDv2 queries (if enabled) to the given
- * local ports, in batches (see ip_mcast_querier_send_port_fanout). */
+ * local ports. */
 static void
 ip_mcast_querier_send_query(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
                             const struct mcast_querier_port *ports,
@@ -6441,17 +6435,14 @@ ip_mcast_querier_send(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
     struct mcast_querier_port *ports =
         ip_mcast_querier_fetch_ports(ip_ms->dp_key, &n_ports, &published);
 
-    /* Retry at a short backoff until the port list is published, then on
-     * the regular query interval. */
+    /* Retry at a short backoff until the port list is published. */
     long long int interval_ms =
         published ? ip_ms->cfg.query_interval_s * 1000
                   : MCAST_QUERIER_INITIAL_RETRY_MS;
 
-    /* Set the next query time. */
     ip_ms->query_time_ms = current_time + interval_ms;
 
-    /* Skip if the flood group's local ports are unpublished or empty: a
-     * flood-group query would not be delivered locally in either state. */
+    /* Skip if the flood group's local ports are unpublished or empty. */
     if (!ports) {
         return ip_ms->query_time_ms;
     }
@@ -6492,12 +6483,10 @@ ip_mcast_querier_wait(long long int query_time)
     }
 }
 
-/* Records the local ports of the flood group for datapath 'dp_key'.
- * 'ports' may be NULL to store an empty list, which lets the querier
- * distinguish "no local ports" from "not yet published" and drops any
- * stale list.
- *
- * Called from the main thread.  Takes pinctrl_mutex internally. */
+/* 
+ * Sets the local ports of the flood group for datapath dp_key.
+ * ports may be NULL to store and empty list which lets the querier 
+ * distinguish "no local ports" from "not yet published".  */
 void
 pinctrl_mcast_querier_set_ports(int64_t dp_key,
                                 const struct mcast_querier_port *ports,
