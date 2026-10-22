@@ -6270,7 +6270,10 @@ ip_mcast_querier_compose_igmp(struct ip_mcast_snoop *ip_ms, void *buf,
 
     size_t size = dp_packet_size(&packet);
     if (size > buf_size) {
-        size = buf_size;
+        VLOG_WARN_RL("IGMP query (%"PRIuSIZE" bytes) too large for "
+                     "%"PRIuSIZE"-byte buffer", size, buf_size);
+        dp_packet_uninit(&packet);
+        return 0;
     }
     memcpy(buf, dp_packet_data(&packet), size);
     dp_packet_uninit(&packet);
@@ -6306,7 +6309,10 @@ ip_mcast_querier_compose_mld(struct ip_mcast_snoop *ip_ms, void *buf,
 
     size_t size = dp_packet_size(&packet);
     if (size > buf_size) {
-        size = buf_size;
+        VLOG_WARN_RL("MLD query (%"PRIuSIZE" bytes) too large for "
+                     "%"PRIuSIZE"-byte buffer", size, buf_size);
+        dp_packet_uninit(&packet);
+        return 0;
     }
     memcpy(buf, dp_packet_data(&packet), size);
     dp_packet_uninit(&packet);
@@ -6408,12 +6414,18 @@ ip_mcast_querier_send_query(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
     if (ip_ms->cfg.querier_v4_enabled) {
         size_t query_len = ip_mcast_querier_compose_igmp(ip_ms, query_buf,
                                                          sizeof query_buf);
+        if (!query_len) {
+            continue;
+        }
         ip_mcast_querier_send_port_fanout(swconn, ip_ms, query_buf,
                                           query_len, ports, n_ports);
     }
     if (ip_ms->cfg.querier_v6_enabled) {
         size_t query_len = ip_mcast_querier_compose_mld(ip_ms, query_buf,
                                                         sizeof query_buf);
+        if (!query_len) {
+            continue;
+        }
         ip_mcast_querier_send_port_fanout(swconn, ip_ms, query_buf,
                                           query_len, ports, n_ports);
     }
