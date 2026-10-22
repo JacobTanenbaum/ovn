@@ -5437,22 +5437,17 @@ static struct hmap mcast_snoop_map OVS_GUARDED_BY(pinctrl_mutex);
 static struct ovs_list mcast_query_list;
 
 /*
- * Local-port fanout for the multicast querier.
+ * Local ports of each datapath's multicast flood group, published by
+ * physical_run() (main thread) for the querier (pinctrl_handler thread).
  *
- * physical_run() (main thread) records, for each datapath, the local ports
- * the multicast flood group would deliver to.  The querier (run in the
- * pinctrl_handler thread) then sends the query in batches of a bounded number
- * of those ports instead of a single query via the flood group, so that OVS
- * does not translate an unbounded per-port resubmit fan-out (which exceeds
- * OVS's resubmit limit on nodes with many local ports and causes the query to
- * be rejected with OFPFMFC_UNKNOWN).
- * An entry exists once physical_run() has considered the datapath's flood
- * group at least once, and may be empty when the flood group has no local
- * ports on this chassis.
+ * The querier sends its queries directly to these ports in batches rather
+ * than through the flood group, because OVS translates a flood-group query
+ * with one resubmit per port, exceeding its resubmit limit on nodes with
+ * many local ports and dropping the query.
  *
- * 'mcast_querier_ports' (dp_key -> struct mcast_querier_port_list) is written
- * by the main thread and read by the handler thread, both while holding
- * pinctrl_mutex.
+ * An entry exists once the datapath's flood group has been considered at
+ * least once and may be empty when the flood group has no local ports on
+ * this chassis.  Both threads access the hmap under pinctrl_mutex.
  */
 struct mcast_querier_port_list {
     struct hmap_node hmap_node;
@@ -6323,29 +6318,15 @@ ip_mcast_querier_compose_mld(struct ip_mcast_snoop *ip_ms, void *buf,
     return size;
 }
 
-/* Maximum number of local ports bundled into a single querier PACKET_OUT.
- *
- * Each port in a batch is emitted as (load CT_ZONE, if set) + load OUTPORT +
- * resubmit(CHECK_LOOPBACK).  OVS translates a batch by resubmitting once per
- * port through the egress pipeline, and the translation's resubmit counter
- * accumulates across all ports in the batch against ofproto's MAX_RESUBMITS
- * (4096) budget.  The per-port egress path is a fixed ~19 resubmits, so a
- * batch of 100 ports uses ~1900 of the 4096 budget, safely under the limit.
- * Bundling keeps each OVS translation bounded (a single flood-group query of
- * all ~330 ports would use ~6300 resubmits and be rejected) while reducing the
- * number of OpenFlow PACKET_OUT messages to ceil(n_ports / 100). */
+/* Number of local ports per querier PACKET_OUT.  Each port's egress
+ * translation uses ~19 resubmits, so a batch of 100 stays within OVS's
+ * MAX_RESUBMITS (4096) budget. */
 #define MCAST_QUERIER_PORT_BATCH 100
 
 /* Sends 'query' ('query_len' bytes) to each port in 'ports' (0 to
- * 'n_ports'), in batches of at most MCAST_QUERIER_PORT_BATCH ports per
- * PACKET_OUT.  Each port in a batch uses the same per-port actions the flood
- * group would apply for that port (load the port's conntrack zone, set the
- * logical output port, resubmit to the CHECK_LOOPBACK table), so every port's
- * query traverses the per-port egress pipeline exactly like the flood group
- * delivery would.  Bounding each PACKET_OUT to a fixed number of ports keeps
- * each OVS translation under OVS's resubmit limit (which a single flood-group
- * query of all local ports would exceed) while reducing the number of
- * OpenFlow messages. */
+ * 'n_ports') in batches of at most MCAST_QUERIER_PORT_BATCH ports per
+ * PACKET_OUT, using the same per-port actions the flood group would apply,
+ * so each port's query traverses the per-port egress pipeline. */
 static void
 ip_mcast_querier_send_port_fanout(struct rconn *swconn,
                                   struct ip_mcast_snoop *ip_ms,
@@ -6388,15 +6369,11 @@ ip_mcast_querier_send_port_fanout(struct rconn *swconn,
     }
 }
 
-/* Fetches the local ports published by physical_run() for the multicast
- * flood group of datapath 'dp_key' in a single scan of the port lists, and
- * reports through 'published' whether the list has been published yet (the
- * list may be empty).  Returns a newly allocated array of 'n_ports' entries
- * (the caller must free it), or NULL when the list has not been published
- * yet or is empty.
+/* Returns a copy of the local ports published for datapath 'dp_key' (the
+ * caller must free it), or NULL if the list has not been published yet or
+ * is empty, reporting through 'published' whether it has been published.
  *
- * Called from the pinctrl_handler thread.  Takes pinctrl_mutex internally.
- */
+ * Takes pinctrl_mutex internally. */
 static struct mcast_querier_port *
 ip_mcast_querier_fetch_ports(int64_t dp_key, size_t *n_ports, bool *published)
 {
@@ -6426,10 +6403,8 @@ ip_mcast_querier_fetch_ports(int64_t dp_key, size_t *n_ports, bool *published)
     return ports;
 }
 
-/* Composes and sends the IGMPv3 and MLDv2 queries (if ipv4 or ipv6 is
- * enabled) to all local ports of the datapath's multicast flood group, in
- * batches of a set number of ports per OpenFlow message (see
- * ip_mcast_querier_send_port_fanout). */
+/* Composes and sends the IGMPv3 and MLDv2 queries (if enabled) to the given
+ * local ports, in batches (see ip_mcast_querier_send_port_fanout). */
 static void
 ip_mcast_querier_send_query(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
                             const struct mcast_querier_port *ports,
@@ -6450,8 +6425,7 @@ ip_mcast_querier_send_query(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
     }
 }
 
-/* Retry interval (ms) the querier uses while physical_run() has not yet
- * published the local ports of the datapath's multicast flood group. */
+/* Retry interval (ms) while the flood group's local ports are unpublished. */
 #define MCAST_QUERIER_INITIAL_RETRY_MS 1000
 
 static long long int
@@ -6467,9 +6441,8 @@ ip_mcast_querier_send(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
     struct mcast_querier_port *ports =
         ip_mcast_querier_fetch_ports(ip_ms->dp_key, &n_ports, &published);
 
-    /* While the port list has not been published yet, retry at a short
-     * backoff so that the first query is not delayed by a full query
-     * interval; afterwards, retry on the regular query interval. */
+    /* Retry at a short backoff until the port list is published, then on
+     * the regular query interval. */
     long long int interval_ms =
         published ? ip_ms->cfg.query_interval_s * 1000
                   : MCAST_QUERIER_INITIAL_RETRY_MS;
@@ -6477,10 +6450,8 @@ ip_mcast_querier_send(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
     /* Set the next query time. */
     ip_ms->query_time_ms = current_time + interval_ms;
 
-    /* Skip the query if the local ports of the datapath's multicast flood
-     * group have not been published by physical_run() yet, or the flood
-     * group has no local ports.  A flood-group query would not be delivered
-     * locally in either state, so just retry on the next interval. */
+    /* Skip if the flood group's local ports are unpublished or empty: a
+     * flood-group query would not be delivered locally in either state. */
     if (!ports) {
         return ip_ms->query_time_ms;
     }
@@ -6521,16 +6492,12 @@ ip_mcast_querier_wait(long long int query_time)
     }
 }
 
-/* Records, for datapath 'dp_key', the local ports that the multicast flood
- * group delivers to.  'ports' may be NULL, in which case an empty list is
- * stored: this both avoids keeping a stale list from a previous pass and
- * lets the querier distinguish "the flood group has no local ports on this
- * chassis" from "the list has not been published yet".
+/* Records the local ports of the flood group for datapath 'dp_key'.
+ * 'ports' may be NULL to store an empty list, which lets the querier
+ * distinguish "no local ports" from "not yet published" and drops any
+ * stale list.
  *
- * Called from the main thread (physical_run and the mc group changes
- * handler) while it iterates the multicast groups.  Takes pinctrl_mutex
- * internally, so the caller must not already hold it.
- */
+ * Called from the main thread.  Takes pinctrl_mutex internally. */
 void
 pinctrl_mcast_querier_set_ports(int64_t dp_key,
                                 const struct mcast_querier_port *ports,

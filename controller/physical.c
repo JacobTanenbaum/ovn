@@ -2922,8 +2922,8 @@ mc_ofctrl_add_flow(const struct sbrec_multicast_group *mc,
     ofpbuf_clear(&ctx->ofpacts);
 }
 
-/* Appends (port_key, ct_zone) to 'flood_ports' ('flood_ports' must have room
- * for one more entry; 'n_flood_ports' is the current count). */
+/* Appends (port_key, ct_zone) to 'flood_ports', which must have room for
+ * one more entry. */
 static void
 flood_querier_port_add(struct mcast_querier_port *flood_ports,
                        size_t *n_flood_ports, uint32_t port_key,
@@ -2947,10 +2947,8 @@ consider_mc_group(const struct physical_ctx *ctx,
     struct local_datapath *ldp = get_local_datapath(ctx->local_datapaths,
                                                     mc->datapath->tunnel_key);
     if (!ldp) {
-        /* The datapath has no ports local to this chassis, so its flood
-         * group would not deliver queries locally.  Publish an empty list
-         * so the querier can tell this apart from a list that has not been
-         * published yet. */
+        /* No local ports: publish an empty list so the querier can
+         * distinguish this from a list that has not been published yet. */
         if (mc->tunnel_key == OVN_MCAST_FLOOD_TUNNEL_KEY) {
             pinctrl_mcast_querier_set_ports(mc->datapath->tunnel_key, NULL,
                                             0);
@@ -2961,11 +2959,9 @@ consider_mc_group(const struct physical_ctx *ctx,
     struct sset remote_chassis = SSET_INITIALIZER(&remote_chassis);
     struct sset vtep_chassis = SSET_INITIALIZER(&vtep_chassis);
 
-    /* The querier delivers the query to each local port of the flood group
-     * (in batches of up to MCAST_QUERIER_PORT_BATCH per OpenFlow message)
-     * instead of a single query that the flood group fans out per port (see
-     * pinctrl_mcast_querier_set_ports).  Collect the local ports of the flood
-     * group to publish them to the querier. */
+    /* Collect the local ports of the flood group to publish to the querier,
+     * which sends the query to each port directly (see
+     * pinctrl_mcast_querier_set_ports). */
     struct mcast_querier_port *flood_ports = NULL;
     size_t n_flood_ports = 0;
     if (mc->tunnel_key == OVN_MCAST_FLOOD_TUNNEL_KEY) {
