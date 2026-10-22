@@ -6455,7 +6455,8 @@ ip_mcast_querier_ports_published(int64_t dp_key, size_t *n_ports)
 
     struct mcast_querier_port_list *list;
     bool published = false;
-    HMAP_FOR_EACH (list, hmap_node, &mcast_querier_ports) {
+    HMAP_FOR_EACH_WITH_HASH (list, hmap_node, ip_mcast_snoop_hash(dp_key),
+                             &mcast_querier_ports) {
         if (list->dp_key == dp_key) {
             if (n_ports) {
                 *n_ports = list->n_ports;
@@ -6556,7 +6557,8 @@ pinctrl_mcast_querier_set_ports(int64_t dp_key,
     ovs_mutex_lock(&pinctrl_mutex);
 
     struct mcast_querier_port_list *list;
-    HMAP_FOR_EACH (list, hmap_node, &mcast_querier_ports) {
+    HMAP_FOR_EACH_WITH_HASH (list, hmap_node, ip_mcast_snoop_hash(dp_key),
+                             &mcast_querier_ports) {
         if (list->dp_key == dp_key) {
             break;
         }
@@ -6595,7 +6597,8 @@ ip_mcast_querier_get_ports(int64_t dp_key, struct mcast_querier_port *ports,
 
     size_t n = 0;
     struct mcast_querier_port_list *list;
-    HMAP_FOR_EACH (list, hmap_node, &mcast_querier_ports) {
+    HMAP_FOR_EACH_WITH_HASH (list, hmap_node, ip_mcast_snoop_hash(dp_key),
+                             &mcast_querier_ports) {
         if (list->dp_key != dp_key) {
             continue;
         }
