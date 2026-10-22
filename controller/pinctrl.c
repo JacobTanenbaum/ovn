@@ -291,9 +291,6 @@ static void ip_mcast_snoop_run(void)
 static void ip_mcast_querier_run(struct rconn *swconn,
                                  long long int *query_time);
 static void ip_mcast_querier_wait(long long int query_time);
-static size_t ip_mcast_querier_get_ports(int64_t dp_key,
-                                         struct mcast_querier_port *ports,
-                                         size_t *n_ports);
 static void ip_mcast_sync(
     struct ovsdb_idl_txn *ovnsb_idl_txn,
     const struct sbrec_chassis *chassis,
@@ -6391,19 +6388,40 @@ ip_mcast_querier_send_port_fanout(struct rconn *swconn,
     }
 }
 
-/* Fetches the local ports published by physical_run() for datapath 'dp_key'.
- * Returns a newly allocated array of 'n_ports' entries (caller must free), or
- * NULL when the list has not been published yet or is empty. */
+/* Fetches the local ports published by physical_run() for the multicast
+ * flood group of datapath 'dp_key' in a single scan of the port lists, and
+ * reports through 'published' whether the list has been published yet (the
+ * list may be empty).  Returns a newly allocated array of 'n_ports' entries
+ * (the caller must free it), or NULL when the list has not been published
+ * yet or is empty.
+ *
+ * Called from the pinctrl_handler thread.  Takes pinctrl_mutex internally.
+ */
 static struct mcast_querier_port *
-ip_mcast_querier_fetch_ports(int64_t dp_key, size_t *n_ports)
+ip_mcast_querier_fetch_ports(int64_t dp_key, size_t *n_ports, bool *published)
 {
-    size_t n = ip_mcast_querier_get_ports(dp_key, NULL, NULL);
-    if (!n) {
-        *n_ports = 0;
-        return NULL;
+    *published = false;
+    ovs_mutex_lock(&pinctrl_mutex);
+
+    size_t n = 0;
+    struct mcast_querier_port *ports = NULL;
+    struct mcast_querier_port_list *list;
+    HMAP_FOR_EACH_WITH_HASH (list, hmap_node, ip_mcast_snoop_hash(dp_key),
+                             &mcast_querier_ports) {
+        if (list->dp_key != dp_key) {
+            continue;
+        }
+        *published = true;
+        n = list->n_ports;
+        if (n) {
+            ports = xmalloc(n * sizeof *ports);
+            memcpy(ports, list->ports, n * sizeof *ports);
+        }
+        break;
     }
-    struct mcast_querier_port *ports = xmalloc(n * sizeof *ports);
-    ip_mcast_querier_get_ports(dp_key, ports, &n);
+
+    ovs_mutex_unlock(&pinctrl_mutex);
+
     *n_ports = n;
     return ports;
 }
@@ -6411,20 +6429,12 @@ ip_mcast_querier_fetch_ports(int64_t dp_key, size_t *n_ports)
 /* Composes and sends the IGMPv3 and MLDv2 queries (if ipv4 or ipv6 is
  * enabled) to all local ports of the datapath's multicast flood group, in
  * batches of a set number of ports per OpenFlow message (see
- * ip_mcast_querier_send_port_fanout).  Called only when
- * ip_mcast_querier_send() has verified that the per-port list published by
- * physical_run() is non-empty; if the list is emptied before the fetch below,
- * the queries are skipped and sent on the next interval. */
+ * ip_mcast_querier_send_port_fanout). */
 static void
-ip_mcast_querier_send_query(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
+ip_mcast_querier_send_query(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
+                            const struct mcast_querier_port *ports,
+                            size_t n_ports)
 {
-    size_t n_ports;
-    struct mcast_querier_port *ports =
-        ip_mcast_querier_fetch_ports(ip_ms->dp_key, &n_ports);
-    if (!ports) {
-        return;
-    }
-
     char query_buf[128];
     if (ip_ms->cfg.querier_v4_enabled) {
         size_t query_len = ip_mcast_querier_compose_igmp(ip_ms, query_buf,
@@ -6438,36 +6448,6 @@ ip_mcast_querier_send_query(struct rconn *swconn, struct ip_mcast_snoop *ip_ms)
         ip_mcast_querier_send_port_fanout(swconn, ip_ms, query_buf,
                                           query_len, ports, n_ports);
     }
-    free(ports);
-}
-
-/* Returns whether physical_run() has published the local ports of the
- * datapath's multicast flood group for datapath 'dp_key' yet (the list may
- * be empty), and, when 'n_ports' is non-NULL, the number of ports in the
- * list.
- *
- * Called from the pinctrl_handler thread.  Takes pinctrl_mutex internally.
- */
-static bool
-ip_mcast_querier_ports_published(int64_t dp_key, size_t *n_ports)
-{
-    ovs_mutex_lock(&pinctrl_mutex);
-
-    struct mcast_querier_port_list *list;
-    bool published = false;
-    HMAP_FOR_EACH_WITH_HASH (list, hmap_node, ip_mcast_snoop_hash(dp_key),
-                             &mcast_querier_ports) {
-        if (list->dp_key == dp_key) {
-            if (n_ports) {
-                *n_ports = list->n_ports;
-            }
-            published = true;
-            break;
-        }
-    }
-
-    ovs_mutex_unlock(&pinctrl_mutex);
-    return published;
 }
 
 /* Retry interval (ms) the querier uses while physical_run() has not yet
@@ -6483,8 +6463,9 @@ ip_mcast_querier_send(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
     }
 
     size_t n_ports;
-    bool published =
-        ip_mcast_querier_ports_published(ip_ms->dp_key, &n_ports);
+    bool published;
+    struct mcast_querier_port *ports =
+        ip_mcast_querier_fetch_ports(ip_ms->dp_key, &n_ports, &published);
 
     /* While the port list has not been published yet, retry at a short
      * backoff so that the first query is not delayed by a full query
@@ -6500,11 +6481,12 @@ ip_mcast_querier_send(struct rconn *swconn, struct ip_mcast_snoop *ip_ms,
      * group have not been published by physical_run() yet, or the flood
      * group has no local ports.  A flood-group query would not be delivered
      * locally in either state, so just retry on the next interval. */
-    if (!published || !n_ports) {
+    if (!ports) {
         return ip_ms->query_time_ms;
     }
 
-    ip_mcast_querier_send_query(swconn, ip_ms);
+    ip_mcast_querier_send_query(swconn, ip_ms, ports, n_ports);
+    free(ports);
 
     return ip_ms->query_time_ms;
 }
@@ -6580,39 +6562,6 @@ pinctrl_mcast_querier_set_ports(int64_t dp_key,
     list->n_ports = n_ports;
 
     ovs_mutex_unlock(&pinctrl_mutex);
-}
-
-/* Returns the number of local ports the querier should fan out to for
- * datapath 'dp_key' (0 if none are known yet), and, when 'ports' and
- * 'n_ports' are non-NULL, copies up to *n_ports of them into 'ports' and
- * updates *n_ports to the number copied.
- *
- * Called from the pinctrl_handler thread.  Takes pinctrl_mutex internally.
- */
-static size_t
-ip_mcast_querier_get_ports(int64_t dp_key, struct mcast_querier_port *ports,
-                           size_t *n_ports)
-{
-    ovs_mutex_lock(&pinctrl_mutex);
-
-    size_t n = 0;
-    struct mcast_querier_port_list *list;
-    HMAP_FOR_EACH_WITH_HASH (list, hmap_node, ip_mcast_snoop_hash(dp_key),
-                             &mcast_querier_ports) {
-        if (list->dp_key != dp_key) {
-            continue;
-        }
-        n = list->n_ports;
-        if (ports && n_ports) {
-            size_t count = MIN(n, *n_ports);
-            memcpy(ports, list->ports, count * sizeof *ports);
-            *n_ports = count;
-        }
-        break;
-    }
-
-    ovs_mutex_unlock(&pinctrl_mutex);
-    return n;
 }
 
 static void
