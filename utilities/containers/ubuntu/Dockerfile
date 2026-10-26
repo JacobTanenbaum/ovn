@@ -14,6 +14,7 @@ RUN apt update -y \
         clang \
         curl \
         ethtool \
+        frr \
         gcc \
         git \
         gnu-coreutils \
@@ -56,8 +57,6 @@ RUN update-alternatives --install /usr/local/bin/tee \
     tee "$(command -v gnutee)" 100
 
 WORKDIR /workspace
-
-COPY $CONTAINERS_PATH/openbfdd.patch /tmp/openbfdd.patch
 
 COPY $CONTAINERS_PATH/py-requirements.txt /tmp/py-requirements.txt
 

@@ -13,20 +13,6 @@ function compile_sparse()
     popd
 }
 
-function compile_openbfdd()
-{
-    git clone https://github.com/dyninc/OpenBFDD.git \
-        /workspace/OpenBFDD
-
-    pushd OpenBFDD
-    git apply /tmp/openbfdd.patch
-    ./autogen.sh
-    ./configure --enable-silent-rules
-    make
-    make install
-    popd
-}
-
 function install_python_dep()
 {
     # The --user should be removed once pip can be upgraded on Ubuntu.
@@ -90,6 +76,5 @@ function build_dpdk()
 }
 
 compile_sparse
-compile_openbfdd
 install_python_dep
 build_dpdk

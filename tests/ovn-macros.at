@@ -1558,7 +1558,9 @@ stop_ovsdb_controller_updates() {
 restart_ovsdb_controller_updates() {
   TCP_PORT=$1
   echo Restarting updates from ovn-controller to ovsdb
-  AT_CHECK([nft list ruleset | grep $TCP_PORT], [0], [ignore])
+  dnl nft may warn on stderr about tables managed by iptables-nft or
+  dnl missing xt targets in the kernel; such noise is not relevant here.
+  AT_CHECK([nft list ruleset 2>/dev/null | grep $TCP_PORT], [0], [ignore])
   AT_CHECK([nft delete table ip ovn-test])
 }
 

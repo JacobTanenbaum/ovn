@@ -168,8 +168,30 @@ find_command dhcpd
 # Set HAVE_DHCLIENT
 find_command dhclient
 
-# Set HAVE_BFDD_BEACON
-find_command bfdd-beacon
+# frr_daemon PROG
+#
+# Print the path of FRR program PROG, failing if it is not found. The
+# daemons are not always on the PATH (e.g. Fedora installs them under
+# /usr/libexec/frr/).
+frr_daemon()
+{
+    if command -v "$1" > /dev/null 2>&1; then
+        command -v "$1"
+        return 0
+    fi
+    if test -x "/usr/libexec/frr/$1"; then
+        echo "/usr/libexec/frr/$1"
+        return 0
+    fi
+    return 1
+}
+
+# Set HAVE_FRR (the BFD system test uses FRR's bfdd as the BFD peer)
+HAVE_FRR=no
+if frr_daemon vtysh >/dev/null && frr_daemon zebra >/dev/null && \
+   frr_daemon bfdd >/dev/null; then
+    HAVE_FRR=yes
+fi
 
 # Set HAVE_ARPING
 find_command arping

@@ -7263,9 +7263,63 @@ AT_CLEANUP
 
 OVN_FOR_EACH_NORTHD([
 AT_SETUP([BFD])
-AT_SKIP_IF([test $HAVE_BFDD_BEACON = no])
+AT_SKIP_IF([test $HAVE_FRR = no])
 AT_SKIP_IF([test $HAVE_TCPDUMP = no])
 AT_KEYWORDS([ovn-bfd])
+
+# frr_vtysh [args...]
+#
+# Run vtysh against the FRR instance running in the "server" netns.
+frr_vtysh() {
+    if grep -qi fedora /etc/os-release; then
+        vtysh --vty_socket /run/frr/server "$@"
+    else
+        vtysh -N server "$@"
+    fi
+}
+
+# frr_bfd_peer PEER
+#
+# Configure the BFD session toward PEER. FRR only accepts BFD from
+# configured peers, so this replaces "bfdd-control allow". The timers
+# match the defaults OVN programs in the BFD table (min_tx/min_rx
+# 1000ms, detect multiplier 5).
+frr_bfd_peer() {
+    frr_vtysh -c configure -c bfd -c "peer $1" \
+        -c "transmit-interval 1000" \
+        -c "receive-interval 1000" \
+        -c "detect-multiplier 5"
+}
+
+# frr_bfd_no_peer PEER
+#
+# Remove the BFD session toward PEER.
+frr_bfd_no_peer() {
+    frr_vtysh -c configure -c bfd -c "no peer $1"
+}
+
+# frr_bfd_stop PEER
+#
+# Administratively disable the BFD session toward PEER. FRR stops
+# sending BFD packets, which replaces "bfdd-control stop".
+frr_bfd_stop() {
+    frr_vtysh -c configure -c bfd -c "peer $1" -c shutdown
+}
+
+# frr_bfd_start PEER
+#
+# Undo frr_bfd_stop.
+frr_bfd_start() {
+    frr_vtysh -c configure -c bfd -c "peer $1" -c "no shutdown"
+}
+
+# frr_bfd_down PEER
+#
+# Succeeds when the FRR session toward PEER is down.
+frr_bfd_down() {
+    frr_vtysh -c "show bfd peers"  | grep -A 32 "peer $1[[[:space:]]]" | \
+        grep -q "Status: down"
+}
 
 ovn_start
 OVS_TRAFFIC_VSWITCHD_START()
@@ -7328,11 +7382,17 @@ NS_CHECK_EXEC([server], [ip addr add 1000::b/64 dev s1])
 AT_CHECK([ovs-vsctl set Open_vSwitch . external-ids:ovn-bridge-mappings=phynet:br-ext])
 check ovn-nbctl lsp-add-localnet-port public public1 phynet
 
-NETNS_DAEMONIZE([server], [bfdd-beacon  --nofork --tee --listen=172.16.1.50 >beacon.stdout 2>&1], [beacon.pid])
-OVS_WAIT_UNTIL([grep -q "Listening for BFD connections" beacon.stdout])
-NS_CHECK_EXEC([server], [bfdd-control allow 172.16.1.1], [0], [dnl
-Allowing connections from 172.16.1.1
-])
+# Start zebra and bfdd in the server netns. FRR's "-N" option keeps the
+# daemons' pid and vty sockets under /var/run/frr/server/, so vtysh
+# talks to this instance only.
+ip netns exec server $(frr_daemon zebra) -d -N server
+OVS_WAIT_UNTIL([test -s /var/run/frr/server/zebra.pid])
+on_exit "test -s /var/run/frr/server/zebra.pid && kill \`cat /var/run/frr/server/zebra.pid\`"
+ip netns exec server $(frr_daemon bfdd) -d -N server
+OVS_WAIT_UNTIL([test -s /var/run/frr/server/bfdd.pid])
+on_exit "test -s /var/run/frr/server/bfdd.pid && kill \`cat /var/run/frr/server/bfdd.pid\`"
+
+check frr_bfd_peer 172.16.1.1
 
 check ovn-nbctl --bfd lr-route-add R1 100.0.0.0/8 172.16.1.50 rp-public
 uuid=$(fetch_column nb:bfd _uuid logical_port="rp-public")
@@ -7345,7 +7405,7 @@ OVS_WAIT_UNTIL([ovn-sbctl dump-flows R1 |grep lr_in_ip_routing |grep 'ip4.dst ==
 # un-associate the bfd connection and the static route
 check ovn-nbctl clear logical_router_static_route $route_uuid bfd
 wait_column "admin_down" nb:bfd status logical_port=rp-public
-OVS_WAIT_UNTIL([ip netns exec server bfdd-control status | grep -qi state=Down])
+OVS_WAIT_UNTIL([frr_bfd_down 172.16.1.1])
 
 check ovn-nbctl --bfd lr-policy-add R1 100 "ip4.src == 200.0.0.0/8" reroute 172.16.1.50,172.16.1.60
 wait_column "up" nb:bfd status dst_ip=172.16.1.50
@@ -7354,7 +7414,7 @@ OVS_WAIT_UNTIL([ovn-sbctl dump-flows R1 | grep lr_in_policy_ecmp | grep -q 172.1
 check ovn-nbctl lr-policy-del R1
 wait_column "admin_down" nb:bfd status dst_ip=172.16.1.50
 wait_column "admin_down" nb:bfd status dst_ip=172.16.1.60
-OVS_WAIT_UNTIL([ip netns exec server bfdd-control status | grep -qi state=Down])
+OVS_WAIT_UNTIL([frr_bfd_down 172.16.1.1])
 
 NETNS_START_TCPDUMP([server], [-nni s1 udp port 3784 -Q in], [bfd])
 sleep 5
@@ -7373,10 +7433,8 @@ wait_column "up" nb:bfd status logical_port=rp-public
 OVS_WAIT_UNTIL([ovn-sbctl dump-flows R1 |grep lr_in_ip_routing |grep 'ip4.dst == 100.0.0.0/8' |grep -q 172.16.1.50])
 OVS_WAIT_UNTIL([ovn-sbctl dump-flows R1 |grep lr_in_policy |grep 'ip4.src == 200.0.0.0/8' |grep -q 172.16.1.50])
 
-# stop bfd endpoint
-NS_CHECK_EXEC([server], [bfdd-control stop], [0], [dnl
-stopping
-])
+# stop the BFD session
+check frr_bfd_stop 172.16.1.1
 wait_column "down" nb:bfd status logical_port=rp-public
 OVS_WAIT_UNTIL([test "$(ovn-sbctl dump-flows R1 |grep lr_in_ip_routing |grep 'ip4.dst == 100.0.0.0/8' |grep 172.16.1.50)" = ""])
 OVS_WAIT_UNTIL([test "$(ovn-sbctl dump-flows R1 |grep lr_in_policy |grep 'ip4.src == 200.0.0.0/8' |grep 172.16.1.50)" = ""])
@@ -7396,12 +7454,8 @@ check ovn-nbctl lsp-add public bgp-daemon -- lsp-set-addresses bgp-daemon unknow
 check ovn-nbctl --wait=sb set logical_router_port rp-public options:routing-protocol-redirect=bgp-daemon
 check ovn-nbctl --wait=sb set logical_router_port rp-public options:routing-protocols=BGP,BFD
 
-# restart bfdd
-NETNS_DAEMONIZE([server], [bfdd-beacon  --nofork --tee --listen=172.16.1.50 >beacon.stdout 2>&1], [beacon.pid])
-OVS_WAIT_UNTIL([grep -q "Listening for BFD connections" beacon.stdout])
-NS_CHECK_EXEC([server], [bfdd-control allow 172.16.1.1], [0], [dnl
-Allowing connections from 172.16.1.1
-])
+# restart the BFD session
+check frr_bfd_start 172.16.1.1
 
 wait_column "up" nb:bfd status logical_port=rp-public
 OVS_WAIT_UNTIL([ovn-sbctl dump-flows R1 |grep lr_in_ip_routing |grep 'ip4.dst == 100.0.0.0/8' |grep -q 172.16.1.50])
@@ -7409,7 +7463,7 @@ check_row_count Advertised_Route 1 ip_prefix=100.0.0.0/8
 
 check ovn-nbctl clear logical_router_static_route $route_uuid bfd
 wait_column "admin_down" nb:bfd status logical_port=rp-public
-OVS_WAIT_UNTIL([ip netns exec server bfdd-control status | grep -qi state=Down])
+OVS_WAIT_UNTIL([frr_bfd_down 172.16.1.1])
 check ovn-nbctl destroy bfd $uuid
 check_row_count bfd 0
 
@@ -7420,21 +7474,20 @@ OVS_WAIT_UNTIL([ovn-sbctl dump-flows R1 |grep lr_in_policy |grep 'ip4.src == 210
 
 check ovn-nbctl lr-policy-del R1
 wait_column "admin_down" nb:bfd status logical_port=rp-public
-OVS_WAIT_UNTIL([ip netns exec server bfdd-control status | grep -qi state=Down])
+OVS_WAIT_UNTIL([frr_bfd_down 172.16.1.1])
 uuid=$(fetch_column nb:bfd _uuid logical_port="rp-public")
 
 check ovn-nbctl set logical_router_static_route $route_uuid bfd=$uuid
 wait_column "up" nb:bfd status logical_port=rp-public
-# stop bfd endpoint
-NS_CHECK_EXEC([server], [bfdd-control stop], [0], [dnl
-stopping
-])
+# stop the BFD session
+check frr_bfd_stop 172.16.1.1
 wait_column "down" nb:bfd status logical_port=rp-public
 check_row_count Advertised_Route 0 ip_prefix=100.0.0.0/8
 
-# remove bfd entry
+# remove the bfd entry and the FRR session
 check ovn-nbctl destroy bfd $uuid
 check_row_count bfd 0
+check frr_bfd_no_peer 172.16.1.1
 NETNS_START_TCPDUMP([server], [-nni s1 udp port 3784 -Q in], [bfd])
 sleep 5
 kill $(pidof tcpdump)
@@ -7445,14 +7498,11 @@ check ovn-nbctl lr-route-add R1 2000::/64 1000::b
 route_uuid_v6=$(fetch_column nb:logical_router_static_route _uuid ip_prefix=\"2000::/64\")
 check ovn-nbctl set logical_router_static_route $route_uuid_v6 bfd=$uuid_v6
 check ovn-nbctl --wait=hv sync
-NETNS_DAEMONIZE([server], [bfdd-beacon  --nofork --tee --listen=1000::b >beacon.stdout 2>&1], [beacon.pid])
-OVS_WAIT_UNTIL([grep -q "Listening for BFD connections" beacon.stdout])
-NS_CHECK_EXEC([server], [bfdd-control allow 1000::a], [0], [dnl
-Allowing connections from 1000::a
-])
+check frr_bfd_peer 1000::a
 
 wait_column "up" nb:bfd status logical_port=rp-public
 check ovn-nbctl destroy bfd $uuid_v6
+check frr_bfd_no_peer 1000::a
 
 OVN_CLEANUP_CONTROLLER([hv1])
 

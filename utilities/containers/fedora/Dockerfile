@@ -14,6 +14,7 @@ RUN dnf -y update \
         dhcp-client \
         dhcp-server \
         ethtool \
+        frr \
         gcc \
         gcc-c++ \
         git \
@@ -53,8 +54,6 @@ RUN dnf -y update \
     dnf clean all
 
 WORKDIR /workspace
-
-COPY $CONTAINERS_PATH/openbfdd.patch /tmp/openbfdd.patch
 
 COPY $CONTAINERS_PATH/py-requirements.txt /tmp/py-requirements.txt
 
