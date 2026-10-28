@@ -8727,6 +8727,49 @@ build_acls(const struct ls_stateful_record *ls_stateful_rec,
                       REGBIT_ACL_HINT_ALLOW_PERSISTED" == 1",
                       post_lb_persisted_acl_action,
                       lflow_ref);
+
+        /* Ingress and Egress ACL Table (Priority 65532).
+         *
+         * Allow ICMP echo replies (IPv4 type 0, IPv6 type 129) generated
+         * by the logical router and delivered to a logical port through
+         * one of its router ports.
+         *
+         * An echo request sent to the router port's IP address is allowed
+         * by the destination port's from-lport ACL and committed to
+         * conntrack.  Router ports are exempted from conntrack (see
+         * skip_port_from_conntrack()) because the router port does not
+         * share a conntrack zone with the destination port.  When the
+         * echo reply comes back through the router port, the conntrack
+         * lookup in the destination port's pipeline does not find the
+         * committed entry, so the reply is tracked as a new connection
+         * and dropped by a to-lport drop ACL.  Packets can only enter a
+         * logical switch through a router port from the connected logical
+         * router, so allowing this traffic unconditionally is safe.
+         *
+         * This is enforced at a higher priority than ACLs can be defined. */
+        {
+            struct ovn_port *op;
+            VECTOR_FOR_EACH (&od->router_ports, op) {
+                char *rport_match = xasprintf("inport == %s && "
+                                              "(icmp4.type == 0 || "
+                                              "icmp6.type == 129)",
+                                              op->json_key);
+                ovn_lflow_add(lflows, od, S_SWITCH_IN_ACL_EVAL,
+                              UINT16_MAX - 3, rport_match,
+                              REGBIT_ACL_HINT_DROP" = 0; "
+                              REGBIT_ACL_HINT_BLOCK" = 0; "
+                              REGBIT_ACL_HINT_ALLOW_REL" = 1; "
+                              REGBIT_NF_ENABLED" = ct_label.nf; "
+                              REGBIT_ACL_VERDICT_ALLOW" = 1; next;",
+                              lflow_ref);
+                ovn_lflow_add(lflows, od, S_SWITCH_OUT_ACL_EVAL,
+                              UINT16_MAX - 3, rport_match,
+                              REGBIT_NF_ENABLED" = ct_label.nf; "
+                              REGBIT_ACL_VERDICT_ALLOW " = 1; next;",
+                              lflow_ref);
+                free(rport_match);
+            }
+        }
     }
 
     /* Ingress and Egress ACL Table (Priority 65532).

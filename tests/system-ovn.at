@@ -24110,3 +24110,56 @@ OVS_TRAFFIC_VSWITCHD_STOP(["/failed to query port patch-.*/d
 /connection dropped.*/d"])
 AT_CLEANUP
 ])
+])
+
+OVN_FOR_EACH_NORTHD([
+AT_SETUP([ping to router port with stateful ACL])
+AT_KEYWORDS([acl])
+
+CHECK_CONNTRACK()
+CHECK_CONNTRACK_NAT()
+ovn_start
+OVS_TRAFFIC_VSWITCHD_START()
+ADD_BR([br-int])
+
+check ovs-vsctl \
+        -- set Open_vSwitch . external-ids:system-id=hv1 \
+        -- set Open_vSwitch . external-ids:ovn-remote=unix:$ovs_base/ovn-sb/ovn-sb.sock \
+        -- set Open_vSwitch . external-ids:ovn-encap-type=geneve \
+        -- set Open_vSwitch . external-ids:ovn-encap-ip=169.0.0.1 \
+        -- set bridge br-int fail-mode=secure other-config:disable-in-band=true
+
+start_daemon ovn-controller
+
+check ovn-nbctl lr-add lr0
+check ovn-nbctl lrp-add lr0 lr0-ls0 00:00:00:00:00:01 10.0.0.1/24
+check ovn-nbctl ls-add ls0
+check ovn-nbctl lsp-add-router-port ls0 ls0-lr0 lr0-ls0
+check ovn-nbctl lsp-add ls0 vm1
+check ovn-nbctl lsp-set-addresses vm1 "f0:00:00:00:00:01 10.0.0.10"
+
+dnl Stateful security group with only egress allow-all rules:
+dnl egress is allowed, ingress is dropped.
+check ovn-nbctl acl-add ls0 from-lport 100 "inport == \"vm1\" && ip" allow-related
+check ovn-nbctl acl-add ls0 to-lport 100 "outport == \"vm1\" && ip" drop
+
+ADD_NAMESPACES(vm1)
+ADD_VETH(vm1, vm1, br-int, "10.0.0.10/24", "f0:00:00:00:00:01", "10.0.0.1")
+
+wait_for_ports_up
+check ovn-nbctl --wait=hv sync
+
+NS_CHECK_EXEC([vm1], [ping -q -c 3 -i 0.3 -w 2 10.0.0.1 | FORMAT_PING], [0], [dnl
+3 packets transmitted, 3 received, 0% packet loss, time 0ms
+])
+
+OVN_CLEANUP_CONTROLLER([hv1])
+
+OVN_CLEANUP_NORTHD
+
+as
+OVS_TRAFFIC_VSWITCHD_STOP(["/failed to query port patch-.*/d
+/connection dropped.*/d"])
+
+AT_CLEANUP
+])
