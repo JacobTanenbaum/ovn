@@ -37204,9 +37204,11 @@ AT_CHECK([as hv1 ovn-appctl -t ovn-controller ct-zone-list | \
 grep sw0-port2 -c], [0], [1
 ])
 
-# There should be no ct-zone id allocated for sw0-lr0 and lr0-sw0
+# There should be a ct zone for the switch-side patch port sw0-lr0, but
+# not for the router-side patch port lr0-sw0.
 AT_CHECK([as hv1 ovn-appctl -t ovn-controller ct-zone-list | \
-grep sw0-lr0], [1], [])
+grep sw0-lr0 -c], [0], [1
+])
 
 AT_CHECK([as hv1 ovn-appctl -t ovn-controller ct-zone-list | \
 grep lr0-sw0], [1], [])
@@ -37225,11 +37227,16 @@ grep sw1-port1 -c], [0], [1
 # Attach sw1 to lr0
 check ovn-nbctl lsp-add-router-port sw1 sw1-lr0 lr0-sw1
 
-# There should be no ct-zone id allocated for sw1-lr0
+# There is no ct-zone id allocated for the switch-side patch port
+# sw1-lr0 while its router port does not exist yet.
 AT_CHECK([as hv1 ovn-appctl -t ovn-controller ct-zone-list | \
 grep sw1-lr0], [1], [])
 
 check ovn-nbctl lrp-add lr0 lr0-sw1 00:00:00:00:ff:02 20.0.0.1/24
+
+# There should be a ct zone for the switch-side patch port sw1-lr0
+OVS_WAIT_UNTIL([test `as hv1 ovn-appctl -t ovn-controller ct-zone-list | \
+grep sw1-lr0 -c` -eq 1])
 
 # There should be no ct-zone id allocated for lr0-sw1
 AT_CHECK([as hv1 ovn-appctl -t ovn-controller ct-zone-list | \
@@ -43878,8 +43885,10 @@ check ovn-nbctl --wait=hv sync
 AS_BOX([With patch ports])
 zone_list_hv1=$(as hv1 ovn-appctl -t ovn-controller ct-zone-list | sort)
 AT_CHECK([echo "$zone_list_hv1" | sed "s/ [[0-9]]*/ ??/" | sort], [0], [dnl
+ls1-r1 ??
 ls1_dnat ??
 ls1_snat ??
+ls2-r1 ??
 ls2_dnat ??
 ls2_snat ??
 lsp1 ??
@@ -43889,8 +43898,10 @@ r1_snat ??
 
 zone_list_hv2=$(as hv2 ovn-appctl -t ovn-controller ct-zone-list | sort)
 AT_CHECK([echo "$zone_list_hv2" | sed "s/ [[0-9]]*/ ??/" | sort], [0], [dnl
+ls1-r1 ??
 ls1_dnat ??
 ls1_snat ??
+ls2-r1 ??
 ls2_dnat ??
 ls2_snat ??
 lsp2 ??
@@ -43956,8 +43967,10 @@ AS_BOX([With patch ports again])
 check ovn-nbctl --wait=hv remove Logical_Router r1 options chassis=hv2
 zone_list_hv1=$(as hv1 ovn-appctl -t ovn-controller ct-zone-list | sort)
 AT_CHECK([echo "$zone_list_hv1" | sed "s/ [[0-9]]*/ ??/" | sort], [0], [dnl
+ls1-r1 ??
 ls1_dnat ??
 ls1_snat ??
+ls2-r1 ??
 ls2_dnat ??
 ls2_snat ??
 lsp1 ??
@@ -43967,8 +43980,10 @@ r1_snat ??
 
 zone_list_hv2=$(as hv2 ovn-appctl -t ovn-controller ct-zone-list | sort)
 AT_CHECK([echo "$zone_list_hv2" | sed "s/ [[0-9]]*/ ??/" | sort], [0], [dnl
+ls1-r1 ??
 ls1_dnat ??
 ls1_snat ??
+ls2-r1 ??
 ls2_dnat ??
 ls2_snat ??
 lsp2 ??

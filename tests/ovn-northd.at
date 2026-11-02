@@ -13947,12 +13947,16 @@ AT_CHECK([ovn-sbctl dump-flows S1 | grep pre_acl | ovn_strip_lflows], [0], [dnl
   table=??(ls_in_pre_acl      ), priority=110  , match=(eth.mcast), action=(next;)
   table=??(ls_in_pre_acl      ), priority=110  , match=(ip && inport == "S1-R1"), action=(next;)
   table=??(ls_in_pre_acl      ), priority=110  , match=(nd || nd_rs || nd_ra || mldv1 || mldv2 || (udp && udp.src == 546 && udp.dst == 547)), action=(next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "S1-R1" && ip4 && ip4.src == 172.16.1.1 && icmp4.type == 0 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "S1-R1" && ip6 && ip6.src == fe80::ac:10ff:fe01:1 && icmp6.type == 129 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
   table=??(ls_out_pre_acl     ), priority=0    , match=(1), action=(next;)
   table=??(ls_out_pre_acl     ), priority=100  , match=(ip), action=(reg0[[0]] = 1; next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(eth.mcast), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(eth.src == $svc_monitor_mac), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(ip && outport == "S1-R1"), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(nd || nd_rs || nd_ra || mldv1 || mldv2 || (udp && udp.src == 546 && udp.dst == 547)), action=(next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "S1-R1" && ip4 && ip4.dst == 172.16.1.1 && icmp4.type == 8 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "S1-R1" && ip6 && ip6.dst == fe80::ac:10ff:fe01:1 && icmp6.type == 128 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
 ])
 
 # Enable 'enable_router_port_acl' and check the flows
@@ -13994,12 +13998,16 @@ AT_CHECK([ovn-sbctl dump-flows S1 | grep pre_acl | ovn_strip_lflows], [0], [dnl
   table=??(ls_in_pre_acl      ), priority=110  , match=(eth.mcast), action=(next;)
   table=??(ls_in_pre_acl      ), priority=110  , match=(ip && inport == "S1-R1"), action=(next;)
   table=??(ls_in_pre_acl      ), priority=110  , match=(nd || nd_rs || nd_ra || mldv1 || mldv2 || (udp && udp.src == 546 && udp.dst == 547)), action=(next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "S1-R1" && ip4 && ip4.src == 172.16.1.1 && icmp4.type == 0 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "S1-R1" && ip6 && ip6.src == fe80::ac:10ff:fe01:1 && icmp6.type == 129 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
   table=??(ls_out_pre_acl     ), priority=0    , match=(1), action=(next;)
   table=??(ls_out_pre_acl     ), priority=100  , match=(ip), action=(reg0[[0]] = 1; next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(eth.mcast), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(eth.src == $svc_monitor_mac), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(ip && outport == "S1-R1"), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(nd || nd_rs || nd_ra || mldv1 || mldv2 || (udp && udp.src == 546 && udp.dst == 547)), action=(next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "S1-R1" && ip4 && ip4.dst == 172.16.1.1 && icmp4.type == 8 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "S1-R1" && ip6 && ip6.dst == fe80::ac:10ff:fe01:1 && icmp6.type == 128 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
 ])
 
 # Clear the option 'enable_router_port_acl' and check the flows.  Before that enable the option.
@@ -14027,12 +14035,16 @@ AT_CHECK([ovn-sbctl dump-flows S1 | grep pre_acl | ovn_strip_lflows], [0], [dnl
   table=??(ls_in_pre_acl      ), priority=110  , match=(eth.mcast), action=(next;)
   table=??(ls_in_pre_acl      ), priority=110  , match=(ip && inport == "S1-R1"), action=(next;)
   table=??(ls_in_pre_acl      ), priority=110  , match=(nd || nd_rs || nd_ra || mldv1 || mldv2 || (udp && udp.src == 546 && udp.dst == 547)), action=(next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "S1-R1" && ip4 && ip4.src == 172.16.1.1 && icmp4.type == 0 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "S1-R1" && ip6 && ip6.src == fe80::ac:10ff:fe01:1 && icmp6.type == 129 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
   table=??(ls_out_pre_acl     ), priority=0    , match=(1), action=(next;)
   table=??(ls_out_pre_acl     ), priority=100  , match=(ip), action=(reg0[[0]] = 1; next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(eth.mcast), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(eth.src == $svc_monitor_mac), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(ip && outport == "S1-R1"), action=(next;)
   table=??(ls_out_pre_acl     ), priority=110  , match=(nd || nd_rs || nd_ra || mldv1 || mldv2 || (udp && udp.src == 546 && udp.dst == 547)), action=(next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "S1-R1" && ip4 && ip4.dst == 172.16.1.1 && icmp4.type == 8 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "S1-R1" && ip6 && ip6.dst == fe80::ac:10ff:fe01:1 && icmp6.type == 128 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
 ])
 
 OVN_CLEANUP_NORTHD
@@ -24118,6 +24130,54 @@ AT_CHECK([grep "ls1-to-spine" ls1flows | ovn_strip_lflows | sort], [0], [dnl
   table=??(ls_out_pre_acl     ), priority=110  , match=(ip && outport == "ls1-to-spine"), action=(next;)
   table=??(ls_out_pre_lb      ), priority=110  , match=(ip && outport == "ls1-to-spine"), action=(next;)
 ])
+
+OVN_CLEANUP_NORTHD
+AT_CLEANUP
+
+AT_SETUP([Conntrack flows for router port ICMP echo])
+ovn_start
+
+check ovn-nbctl lr-add lr0
+check ovn-nbctl lrp-add lr0 lr0-ls0 00:00:00:00:00:01 10.0.0.1/24 fd00::1/64
+check ovn-nbctl ls-add ls0
+check ovn-nbctl lsp-add-router-port ls0 ls0-lr0 lr0-ls0
+check ovn-nbctl lsp-add ls0 vm1 -- \
+    lsp-set-addresses vm1 "f0:00:00:00:00:01 10.0.0.10 fd00::10"
+
+# Stateful security group with only egress allow-all rules:
+# egress is allowed, ingress is dropped.
+check ovn-nbctl acl-add ls0 from-lport 100 "inport == \"vm1\" && ip" allow-related
+check ovn-nbctl acl-add ls0 to-lport 100 "outport == \"vm1\" && ip" drop
+
+check ovn-nbctl --wait=sb sync
+
+AT_CHECK([ovn-sbctl dump-flows ls0 > ls0flows])
+AT_CAPTURE_FILE([ls0flows])
+
+AT_CHECK([grep "ls0-lr0" ls0flows | ovn_strip_lflows | sort], [0], [dnl
+  table=??(ls_in_arp_rsp      ), priority=100  , match=(arp.tpa == 10.0.0.1 && arp.op == 1 && eth.dst == ff:ff:ff:ff:ff:ff && inport == "ls0-lr0"), action=(next;)
+  table=??(ls_in_arp_rsp      ), priority=100  , match=(nd_ns_mcast && ip6.dst == ff02::1:ff00:1 && nd.target == fd00::1 && inport == "ls0-lr0"), action=(next;)
+  table=??(ls_in_arp_rsp      ), priority=100  , match=(nd_ns_mcast && ip6.dst == ff02::1:ff00:1 && nd.target == fe80::200:ff:fe00:1 && inport == "ls0-lr0"), action=(next;)
+  table=??(ls_in_check_port_sec), priority=70   , match=(inport == "ls0-lr0"), action=(reg0[[18]] = 1; next;)
+  table=??(ls_in_l2_lkup      ), priority=50   , match=(eth.dst == 00:00:00:00:00:01), action=(outport = "ls0-lr0"; output;)
+  table=??(ls_in_l2_lkup      ), priority=80   , match=(flags[[1]] == 0 && eth.dst == ff:ff:ff:ff:ff:ff && arp.op == 1 && arp.tpa == 10.0.0.1), action=(clone {outport = "ls0-lr0"; output; }; outport = "_MC_unknown"; output;)
+  table=??(ls_in_l2_lkup      ), priority=80   , match=(flags[[1]] == 0 && eth.mcast && nd_ns && nd.target == fd00::1), action=(clone {outport = "ls0-lr0"; output; }; outport = "_MC_unknown"; output;)
+  table=??(ls_in_l2_lkup      ), priority=80   , match=(flags[[1]] == 0 && eth.mcast && nd_ns && nd.target == fe80::200:ff:fe00:1), action=(clone {outport = "ls0-lr0"; output; }; outport = "_MC_unknown"; output;)
+  table=??(ls_in_pre_acl      ), priority=110  , match=(ip && inport == "ls0-lr0"), action=(next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "ls0-lr0" && ip4 && ip4.src == 10.0.0.1 && icmp4.type == 0 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_in_pre_acl      ), priority=111  , match=(inport == "ls0-lr0" && ip6 && ip6.src == {fd00::1, fe80::200:ff:fe00:1} && icmp6.type == 129 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_in_pre_lb       ), priority=110  , match=(ip && inport == "ls0-lr0"), action=(next;)
+  table=??(ls_out_pre_acl     ), priority=110  , match=(ip && outport == "ls0-lr0"), action=(next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "ls0-lr0" && ip4 && ip4.dst == 10.0.0.1 && icmp4.type == 8 && icmp4.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_out_pre_acl     ), priority=111  , match=(outport == "ls0-lr0" && ip6 && ip6.dst == {fd00::1, fe80::200:ff:fe00:1} && icmp6.type == 128 && icmp6.code == 0), action=(reg0[[0]] = 1; next;)
+  table=??(ls_out_pre_lb      ), priority=110  , match=(ip && outport == "ls0-lr0"), action=(next;)
+])
+
+# There must be no special-case allow flows for router echo replies in the
+# ACL eval tables; the built-in est-allow flow must still be present.
+AT_CHECK([grep 'ls_in_acl_eval' ls0flows | grep 'ls0-lr0' | grep -q icmp], [1])
+AT_CHECK([grep 'ls_out_acl_eval' ls0flows | grep 'ls0-lr0' | grep -q icmp], [1])
+AT_CHECK([grep 'ls_in_acl_eval' ls0flows | grep -q 'ct.est && !ct.rel && ct.rpl && ct_mark.blocked == 0'])
 
 OVN_CLEANUP_NORTHD
 AT_CLEANUP
