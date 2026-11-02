@@ -2873,16 +2873,15 @@ ct_zones_runtime_data_handler(struct engine_node *node, void *data)
                 continue;
             }
 
-            /* For patch ports without ACL flag, delete the ct_zone. */
+            /* The CT zone of a patch port without the ACL flag depends
+             * on the local datapaths of the connected switches, which is
+             * not tracked incrementally.  Fall back to a full recompute
+             * of ct_zones so that zones for router ports are assigned
+             * and released consistently with ct_zones_update(). */
             if (!strcmp(t_lport->pb->type, "patch") &&
                 !smap_get_bool(&t_lport->pb->options,
                                "enable_router_port_acl", false)) {
-                updated |= ct_zone_handle_port_update(&ct_zones_data->ctx,
-                                                      t_lport->pb,
-                                                      false, &scan_start,
-                                                      min_ct_zone,
-                                                      max_ct_zone);
-                continue;
+                return EN_UNHANDLED;
             }
             bool port_updated =
                     t_lport->tracked_type == TRACKED_RESOURCE_NEW ||

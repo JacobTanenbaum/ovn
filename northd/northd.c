@@ -6928,6 +6928,75 @@ skip_port_from_conntrack(const struct ovn_datapath *od, struct ovn_port *op,
     free(egress_match);
 }
 
+static void op_put_v4_networks(struct ds *ds, const struct ovn_port *op,
+                               bool add_bcast);
+static void op_put_v6_networks(struct ds *ds, const struct ovn_port *op);
+
+/* Router-terminated ICMP echo request/reply pairs must be tracked by
+ * conntrack even though other traffic to and from a router port is
+ * exempt from it (see skip_port_from_conntrack()).
+ *
+ * The flows match only echo requests whose destination is the router
+ * port's own address and echo replies whose source is the router
+ * port's own address, so transit traffic through the router port is
+ * not affected.  They run at priority 111, above the priority-110
+ * skip flows installed by skip_port_from_conntrack(). */
+static void
+build_rport_echo_conntrack_flows(const struct ovn_datapath *od,
+                                 struct ovn_port *op,
+                                 struct lflow_table *lflows,
+                                 struct lflow_ref *lflow_ref)
+{
+    ovs_assert(op->peer && op->peer->nbrp);
+
+    struct ds match = DS_EMPTY_INITIALIZER;
+
+    if (op->peer->lrp_networks.n_ipv4_addrs) {
+        ds_put_format(&match, "inport == %s && ip4 && ip4.src == ",
+                      op->json_key);
+        op_put_v4_networks(&match, op->peer, false);
+        ds_put_cstr(&match, " && icmp4.type == 0 && icmp4.code == 0");
+        ovn_lflow_add(lflows, od, S_SWITCH_IN_PRE_ACL, 111, ds_cstr(&match),
+                      REGBIT_CONNTRACK_DEFRAG" = 1; next;", lflow_ref,
+                      WITH_IO_PORT(op->key),
+                      WITH_HINT(&op->nbsp->header_));
+
+        ds_clear(&match);
+        ds_put_format(&match, "outport == %s && ip4 && ip4.dst == ",
+                      op->json_key);
+        op_put_v4_networks(&match, op->peer, false);
+        ds_put_cstr(&match, " && icmp4.type == 8 && icmp4.code == 0");
+        ovn_lflow_add(lflows, od, S_SWITCH_OUT_PRE_ACL, 111, ds_cstr(&match),
+                      REGBIT_CONNTRACK_DEFRAG" = 1; next;", lflow_ref,
+                      WITH_IO_PORT(op->key),
+                      WITH_HINT(&op->nbsp->header_));
+    }
+
+    if (op->peer->lrp_networks.n_ipv6_addrs) {
+        ds_clear(&match);
+        ds_put_format(&match, "inport == %s && ip6 && ip6.src == ",
+                      op->json_key);
+        op_put_v6_networks(&match, op->peer);
+        ds_put_cstr(&match, " && icmp6.type == 129 && icmp6.code == 0");
+        ovn_lflow_add(lflows, od, S_SWITCH_IN_PRE_ACL, 111, ds_cstr(&match),
+                      REGBIT_CONNTRACK_DEFRAG" = 1; next;", lflow_ref,
+                      WITH_IO_PORT(op->key),
+                      WITH_HINT(&op->nbsp->header_));
+
+        ds_clear(&match);
+        ds_put_format(&match, "outport == %s && ip6 && ip6.dst == ",
+                      op->json_key);
+        op_put_v6_networks(&match, op->peer);
+        ds_put_cstr(&match, " && icmp6.type == 128 && icmp6.code == 0");
+        ovn_lflow_add(lflows, od, S_SWITCH_OUT_PRE_ACL, 111, ds_cstr(&match),
+                      REGBIT_CONNTRACK_DEFRAG" = 1; next;", lflow_ref,
+                      WITH_IO_PORT(op->key),
+                      WITH_HINT(&op->nbsp->header_));
+    }
+
+    ds_destroy(&match);
+}
+
 /* Skip conntrack for traffic from/to EVPN remote VTEPs.
  * Remote VTEPs do not have conntrack zones assigned, so
  * conntrack lookups would return +trk+inv and cause drops. */
@@ -7042,6 +7111,9 @@ build_ls_stateful_rec_pre_acls(
             skip_port_from_conntrack(od, op, true,
                                      S_SWITCH_IN_PRE_ACL, S_SWITCH_OUT_PRE_ACL,
                                      110, lflows, lflow_ref);
+            if (op->peer && op->peer->nbrp) {
+                build_rport_echo_conntrack_flows(od, op, lflows, lflow_ref);
+            }
         }
         VECTOR_FOR_EACH (&od->switch_ports, op) {
             skip_port_from_conntrack(od, op, true,

@@ -210,6 +210,16 @@ ct_zones_update(const struct simap *local_lports,
         }
         free(dnat);
         free(snat);
+
+        /* The router ports of a local logical switch need zones assigned
+         * so that traffic terminated by the connected logical router can
+         * be tracked in the router port's zone on this chassis. */
+        if (ld->is_switch) {
+            const struct peer_ports *peers;
+            VECTOR_FOR_EACH_PTR (&ld->peer_ports, peers) {
+                sset_add(&all_users, peers->local->logical_port);
+            }
+        }
     }
 
     ct_zones_parse_range(ovs_table, &min_ct_zone, &max_ct_zone);
