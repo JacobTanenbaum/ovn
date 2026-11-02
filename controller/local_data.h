@@ -101,11 +101,13 @@ void add_local_datapath_peer_port(
     struct ovsdb_idl_index *sbrec_port_binding_by_name,
     struct local_datapath *,
     struct hmap *local_datapaths,
-    struct hmap *tracked_datapaths);
+    struct hmap *tracked_datapaths,
+    struct shash *tracked_peer_ports);
 
 void remove_local_datapath_peer_port(const struct sbrec_port_binding *pb,
                                      struct local_datapath *ld,
-                                     struct hmap *local_datapaths);
+                                     struct hmap *local_datapaths,
+                                     struct shash *tracked_peer_ports);
 
 enum en_tracked_resource_type {
     TRACKED_RESOURCE_NEW,
@@ -137,6 +139,19 @@ void tracked_datapath_lport_add(const struct sbrec_port_binding *,
                                 struct hmap *tracked_datapaths);
 void tracked_datapaths_clear(struct hmap *tracked_datapaths);
 void tracked_datapaths_destroy(struct hmap *tracked_datapaths);
+
+/* A switch-side router patch port whose CT zone assignment may have
+ * changed: 'zone_needed' is true when the connected logical switch is
+ * (still) a local datapath, false when the peer relationship was
+ * removed. */
+struct tracked_peer_port {
+    const struct sbrec_port_binding *pb;
+    bool zone_needed;
+};
+
+void tracked_peer_port_add(const struct sbrec_port_binding *pb,
+                           bool zone_needed,
+                           struct shash *tracked_peer_ports);
 
 /* Maps from a chassis to the OpenFlow port number of the tunnel that can be
  * used to reach that chassis. */

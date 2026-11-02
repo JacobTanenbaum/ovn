@@ -237,9 +237,13 @@ add_local_datapath_peer_port(
     struct ovsdb_idl_index *sbrec_port_binding_by_name,
     struct local_datapath *ld,
     struct hmap *local_datapaths,
-    struct hmap *tracked_datapaths)
+    struct hmap *tracked_datapaths,
+    struct shash *tracked_peer_ports)
 {
     local_datapath_peer_port_add(ld, pb, peer);
+    if (ld->is_switch) {
+        tracked_peer_port_add(pb, true, tracked_peer_ports);
+    }
 
     struct local_datapath *peer_ld =
         get_local_datapath(local_datapaths,
@@ -254,6 +258,9 @@ add_local_datapath_peer_port(
     }
 
     local_datapath_peer_port_add(peer_ld, peer, pb);
+    if (peer_ld->is_switch) {
+        tracked_peer_port_add(peer, true, tracked_peer_ports);
+    }
 }
 
 void
@@ -275,7 +282,8 @@ local_data_dump_peer_ports(struct hmap *local_datapaths, struct ds *peer_ports)
 void
 remove_local_datapath_peer_port(const struct sbrec_port_binding *pb,
                                 struct local_datapath *ld,
-                                struct hmap *local_datapaths)
+                                struct hmap *local_datapaths,
+                                struct shash *tracked_peer_ports)
 {
     size_t i = 0;
     const struct peer_ports *peers;
@@ -297,6 +305,10 @@ remove_local_datapath_peer_port(const struct sbrec_port_binding *pb,
         local_datapath_usage += vector_memory_usage(&ld->peer_ports);
     }
 
+    if (ld->is_switch) {
+        tracked_peer_port_add(pb, false, tracked_peer_ports);
+    }
+
     const struct sbrec_port_binding *peer = removed.remote;
     struct local_datapath *peer_ld =
         get_local_datapath(local_datapaths, peer->datapath->tunnel_key);
@@ -304,7 +316,8 @@ remove_local_datapath_peer_port(const struct sbrec_port_binding *pb,
         /* Remove the peer port from the peer datapath. The peer
          * datapath also tries to remove its peer lport, but that would
          * be no-op. */
-        remove_local_datapath_peer_port(peer, peer_ld, local_datapaths);
+        remove_local_datapath_peer_port(peer, peer_ld, local_datapaths,
+                                        tracked_peer_ports);
     }
 }
 
@@ -434,6 +447,30 @@ tracked_datapath_lport_add(const struct sbrec_port_binding *pb,
     }
     lport->pb = pb;
     lport->tracked_type = tracked_type;
+}
+
+/* Adds 'pb' to 'tracked_peer_ports' keyed by its logical port name,
+ * with the last write winning if the same logical port was already
+ * tracked (e.g. the peer relationship was added and removed within the
+ * same IDL iteration).  A NULL 'tracked_peer_ports' is allowed, in
+ * which case this is a no-op. */
+void
+tracked_peer_port_add(const struct sbrec_port_binding *pb,
+                      bool zone_needed,
+                      struct shash *tracked_peer_ports)
+{
+    if (!tracked_peer_ports) {
+        return;
+    }
+
+    struct tracked_peer_port *tpp =
+        shash_find_data(tracked_peer_ports, pb->logical_port);
+    if (!tpp) {
+        tpp = xmalloc(sizeof *tpp);
+        shash_add(tracked_peer_ports, pb->logical_port, tpp);
+    }
+    tpp->pb = pb;
+    tpp->zone_needed = zone_needed;
 }
 
 void

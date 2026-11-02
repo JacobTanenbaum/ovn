@@ -1390,6 +1390,11 @@ struct ed_type_runtime_data {
     bool localnet_learn_fdb_changed;
     struct hmap tracked_dp_bindings;
 
+    /* Tracked peer (switch-side router) patch ports whose CT zone
+     * assignment may have changed.  Only meaningful when 'tracked' is
+     * true. */
+    struct shash tracked_peer_ports;
+
     struct shash local_active_ports_ipv6_pd;
     struct shash local_active_ports_ras;
 
@@ -1479,6 +1484,7 @@ en_runtime_data_clear_tracked_data(void *data_)
 
     tracked_datapaths_destroy(&data->tracked_dp_bindings);
     hmap_init(&data->tracked_dp_bindings);
+    shash_clear_free_data(&data->tracked_peer_ports);
     data->local_lports_changed = false;
     data->tracked = false;
 }
@@ -1503,6 +1509,7 @@ en_runtime_data_init(struct engine_node *node OVS_UNUSED,
 
     /* Init the tracked data. */
     hmap_init(&data->tracked_dp_bindings);
+    shash_init(&data->tracked_peer_ports);
 
     return data;
 }
@@ -1522,6 +1529,7 @@ en_runtime_data_cleanup(void *data)
     local_datapaths_destroy(&rt_data->local_datapaths);
     shash_destroy(&rt_data->local_active_ports_ipv6_pd);
     shash_destroy(&rt_data->local_active_ports_ras);
+    shash_destroy_free_data(&rt_data->tracked_peer_ports);
     local_binding_data_destroy(&rt_data->lbinding_data);
 }
 
@@ -1616,6 +1624,7 @@ init_binding_ctx(struct engine_node *node,
     b_ctx_out->local_iface_ids = &rt_data->local_iface_ids;
     b_ctx_out->postponed_ports = rt_data->postponed_ports;
     b_ctx_out->tracked_dp_bindings = NULL;
+    b_ctx_out->tracked_peer_ports = NULL;
     b_ctx_out->if_mgr = ctrl_ctx->if_mgr;
     b_ctx_out->localnet_learn_fdb = rt_data->localnet_learn_fdb;
     b_ctx_out->localnet_learn_fdb_changed = false;
@@ -1839,6 +1848,7 @@ runtime_data_ovs_interface_shadow_handler(struct engine_node *node, void *data)
     init_binding_ctx(node, rt_data, &b_ctx_in, &b_ctx_out);
     rt_data->tracked = true;
     b_ctx_out.tracked_dp_bindings = &rt_data->tracked_dp_bindings;
+    b_ctx_out.tracked_peer_ports = &rt_data->tracked_peer_ports;
 
     if (!binding_handle_ovs_interface_changes(&b_ctx_in, &b_ctx_out)) {
         return EN_UNHANDLED;
@@ -1991,6 +2001,7 @@ runtime_data_sb_port_binding_handler(struct engine_node *node, void *data)
 
     rt_data->tracked = true;
     b_ctx_out.tracked_dp_bindings = &rt_data->tracked_dp_bindings;
+    b_ctx_out.tracked_peer_ports = &rt_data->tracked_peer_ports;
 
     if (!binding_handle_port_binding_changes(&b_ctx_in, &b_ctx_out)) {
         return EN_UNHANDLED;
@@ -2003,7 +2014,8 @@ runtime_data_sb_port_binding_handler(struct engine_node *node, void *data)
             b_ctx_out.non_vif_ports_changed ||
             b_ctx_out.local_lports_changed ||
             b_ctx_out.localnet_learn_fdb_changed ||
-            !hmap_is_empty(b_ctx_out.tracked_dp_bindings)) {
+            !hmap_is_empty(b_ctx_out.tracked_dp_bindings) ||
+            !shash_is_empty(b_ctx_out.tracked_peer_ports)) {
         result = EN_HANDLED_UPDATED;
     }
 
@@ -2873,15 +2885,33 @@ ct_zones_runtime_data_handler(struct engine_node *node, void *data)
                 continue;
             }
 
-            /* The CT zone of a patch port without the ACL flag depends
-             * on the local datapaths of the connected switches, which is
-             * not tracked incrementally.  Fall back to a full recompute
-             * of ct_zones so that zones for router ports are assigned
-             * and released consistently with ct_zones_update(). */
+            /* The CT zone of a patch port without the ACL flag is needed
+             * if and only if the port is the switch-side peer of a router
+             * port on a local logical switch.  Read that condition
+             * directly from the peer set of the port's datapath, which is
+             * the same condition ct_zones_update() applies on a full
+             * recompute; ports whose peer relationship was removed are
+             * also tracked in rt_data->tracked_peer_ports below. */
             if (!strcmp(t_lport->pb->type, "patch") &&
                 !smap_get_bool(&t_lport->pb->options,
                                "enable_router_port_acl", false)) {
-                return EN_UNHANDLED;
+                bool zone_needed = false;
+                struct local_datapath *ld = get_local_datapath(
+                    &rt_data->local_datapaths,
+                    t_lport->pb->datapath->tunnel_key);
+                if (ld && ld->is_switch) {
+                    const struct peer_ports *peers;
+                    VECTOR_FOR_EACH_PTR (&ld->peer_ports, peers) {
+                        if (peers->local == t_lport->pb) {
+                            zone_needed = true;
+                            break;
+                        }
+                    }
+                }
+                updated |= ct_zone_handle_port_update(
+                    &ct_zones_data->ctx, t_lport->pb, zone_needed,
+                    &scan_start, min_ct_zone, max_ct_zone);
+                continue;
             }
             bool port_updated =
                     t_lport->tracked_type == TRACKED_RESOURCE_NEW ||
@@ -2891,6 +2921,15 @@ ct_zones_runtime_data_handler(struct engine_node *node, void *data)
                                                   port_updated, &scan_start,
                                                   min_ct_zone, max_ct_zone);
         }
+    }
+
+    struct shash_node *tpp_node;
+    SHASH_FOR_EACH (tpp_node, &rt_data->tracked_peer_ports) {
+        struct tracked_peer_port *tpp = tpp_node->data;
+        updated |= ct_zone_handle_port_update(&ct_zones_data->ctx,
+                                              tpp->pb, tpp->zone_needed,
+                                              &scan_start, min_ct_zone,
+                                              max_ct_zone);
     }
 
     return updated ? EN_HANDLED_UPDATED : EN_HANDLED_UNCHANGED;
