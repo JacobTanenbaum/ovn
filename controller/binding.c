@@ -743,7 +743,8 @@ remove_related_lport(const struct sbrec_port_binding *pb,
  */
 static void
 update_ld_peers(const struct sbrec_port_binding *pb,
-                 struct hmap *local_datapaths)
+                 struct hmap *local_datapaths,
+                 struct shash *tracked_peer_ports)
 {
     struct local_datapath *ld =
         get_local_datapath(local_datapaths, pb->datapath->tunnel_key);
@@ -760,7 +761,8 @@ update_ld_peers(const struct sbrec_port_binding *pb,
     enum en_lport_type type = get_lport_type(pb);
     size_t num_peers = vector_len(&ld->peer_ports);
     if (type != LP_PATCH) {
-        remove_local_datapath_peer_port(pb, ld, local_datapaths);
+        remove_local_datapath_peer_port(pb, ld, local_datapaths,
+                                        tracked_peer_ports);
         if (num_peers != vector_len(&ld->peer_ports)) {
             static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
             VLOG_DBG_RL(&rl,
@@ -2039,7 +2041,8 @@ consider_nonvif_lport_(const struct sbrec_port_binding *pb,
                     b_ctx_in->sbrec_port_binding_by_datapath,
                     b_ctx_in->sbrec_port_binding_by_name,
                     ld, b_ctx_out->local_datapaths,
-                    b_ctx_out->tracked_dp_bindings);
+                    b_ctx_out->tracked_dp_bindings,
+                    b_ctx_out->tracked_peer_ports);
             }
         }
 
@@ -2073,7 +2076,8 @@ consider_nonvif_lport_(const struct sbrec_port_binding *pb,
 
         if (ld) {
             remove_local_datapath_peer_port(pb, ld,
-                                            b_ctx_out->local_datapaths);
+                                            b_ctx_out->local_datapaths,
+                                            b_ctx_out->tracked_peer_ports);
         }
     }
 
@@ -2460,7 +2464,8 @@ remove_pb_from_local_datapath(const struct sbrec_port_binding *pb,
     remove_related_lport(pb, b_ctx_out);
     if (!strcmp(pb->type, "patch") ||
         !strcmp(pb->type, "l3gateway")) {
-        remove_local_datapath_peer_port(pb, ld, b_ctx_out->local_datapaths);
+        remove_local_datapath_peer_port(pb, ld, b_ctx_out->local_datapaths,
+                                        b_ctx_out->tracked_peer_ports);
     } else if (!strcmp(pb->type, "localnet")) {
         if (ld->localnet_port && !strcmp(ld->localnet_port->logical_port,
                                          pb->logical_port)) {
@@ -3122,7 +3127,8 @@ consider_patch_port_for_local_datapaths(const struct sbrec_port_binding *pb,
                 b_ctx_in->sbrec_port_binding_by_datapath,
                 b_ctx_in->sbrec_port_binding_by_name,
                 ld, b_ctx_out->local_datapaths,
-                b_ctx_out->tracked_dp_bindings);
+                b_ctx_out->tracked_dp_bindings,
+                b_ctx_out->tracked_peer_ports);
         }
     }
 
@@ -3443,7 +3449,8 @@ delete_done:
         }
 
         if (sbrec_port_binding_is_updated(pb, SBREC_PORT_BINDING_COL_TYPE)) {
-            update_ld_peers(pb, b_ctx_out->local_datapaths);
+            update_ld_peers(pb, b_ctx_out->local_datapaths,
+                            b_ctx_out->tracked_peer_ports);
         }
 
         if (!handle_updated_port(b_ctx_in, b_ctx_out, pb)) {

@@ -111,6 +111,11 @@ struct binding_ctx_out {
      * the changed datapaths and port bindings. */
     struct hmap *tracked_dp_bindings;
 
+    /* shash of 'struct tracked_peer_port' (keyed by logical port name)
+     * which the callee fills in when the peer relationship of a
+     * switch-side patch port changes. */
+    struct shash *tracked_peer_ports;
+
     struct if_status_mgr *if_mgr;
 
     struct sset *postponed_ports;

@@ -2871,6 +2871,85 @@ OVN_CLEANUP([hv1])
 AT_CLEANUP
 
 OVN_FOR_EACH_NORTHD([
+AT_SETUP([ovn-controller - I-P for CT zone patch ports])
+AT_KEYWORDS([ovn-ct-zone-patch-ip])
+
+ovn_start
+
+net_add n1
+sim_add hv1
+as hv1
+check ovs-vsctl add-br br-phys
+ovn_attach n1 br-phys 192.168.0.1
+
+# ls1 and ls2 are local through their VIFs and lr0 is local through
+# rp-ls1, so attaching lr0 to ls2 only changes the peer set of already
+# local datapaths.
+check ovn-nbctl lr-add lr0
+check ovn-nbctl ls-add ls1
+check ovn-nbctl lrp-add lr0 rp-ls1 00:00:01:01:02:01 10.0.1.1/24
+check ovn-nbctl lsp-add-router-port ls1 ls1-rp rp-ls1
+check ovn-nbctl lsp-add ls1 lsp1 -- lsp-set-addresses lsp1 \
+"00:11:00:00:00:01 10.0.1.2"
+check ovn-nbctl ls-add ls2
+check ovn-nbctl lsp-add ls2 lsp2 -- lsp-set-addresses lsp2 \
+"00:11:00:00:00:02 10.0.2.2"
+
+as hv1
+check ovs-vsctl add-port br-int vif1 \
+    -- set Interface vif1 external_ids:iface-id=lsp1
+check ovs-vsctl add-port br-int vif2 \
+    -- set Interface vif2 external_ids:iface-id=lsp2
+
+wait_for_ports_up
+check ovn-nbctl --wait=hv sync
+
+# Attaching lr0 to the already local ls2 assigns the CT zone of the
+# switch-side patch port incrementally.
+check as hv1 ovn-appctl -t ovn-controller inc-engine/clear-stats
+check ovn-nbctl --wait=hv lrp-add lr0 rp-ls2 00:00:01:01:02:02 10.0.2.1/24 \
+    -- lsp-add-router-port ls2 ls2-rp rp-ls2
+OVS_WAIT_UNTIL([ovs-vsctl get Bridge br-int external_ids:ct-zone-ls2-rp])
+check_controller_engine_stats hv1 runtime_data norecompute compute
+check_controller_engine_stats hv1 ct_zones norecompute compute
+
+# Detaching lr0 from ls2 releases the CT zone incrementally.
+check as hv1 ovn-appctl -t ovn-controller inc-engine/clear-stats
+check ovn-nbctl --wait=hv lsp-del ls2-rp -- lrp-del rp-ls2
+OVS_WAIT_WHILE([ovs-vsctl get Bridge br-int external_ids:ct-zone-ls2-rp])
+check_controller_engine_stats hv1 runtime_data norecompute compute
+check_controller_engine_stats hv1 ct_zones norecompute compute
+
+# Re-attaching with the same port names re-assigns the zone
+# incrementally.
+check as hv1 ovn-appctl -t ovn-controller inc-engine/clear-stats
+check ovn-nbctl --wait=hv lrp-add lr0 rp-ls2 00:00:01:01:02:02 10.0.2.1/24 \
+    -- lsp-add-router-port ls2 ls2-rp rp-ls2
+OVS_WAIT_UNTIL([ovs-vsctl get Bridge br-int external_ids:ct-zone-ls2-rp])
+check_controller_engine_stats hv1 ct_zones norecompute compute
+
+# ls3 is not local yet: attaching it to the already local lr0 makes the
+# datapath newly tracked, so a full ct_zones recompute is expected and
+# the zone is assigned by it.
+check ovn-nbctl ls-add ls3
+check as hv1 ovn-appctl -t ovn-controller inc-engine/clear-stats
+check ovn-nbctl --wait=hv lrp-add lr0 rp-ls3 00:00:01:01:02:03 10.0.3.1/24 \
+    -- lsp-add-router-port ls3 ls3-rp rp-ls3
+OVS_WAIT_UNTIL([ovs-vsctl get Bridge br-int external_ids:ct-zone-ls3-rp])
+check_controller_engine_stats hv1 ct_zones recompute nocompute
+
+# Toggling enable_router_port_acl on a local patch port is still handled
+# by the tracked lports path of the ct_zones handler.
+check as hv1 ovn-appctl -t ovn-controller inc-engine/clear-stats
+check ovn-nbctl --wait=hv lsp-set-options ls1-rp enable_router_port_acl=true
+OVS_WAIT_UNTIL([ovs-vsctl get Bridge br-int external_ids:ct-zone-ls1-rp])
+check_controller_engine_stats hv1 ct_zones norecompute compute
+
+OVN_CLEANUP([hv1])
+AT_CLEANUP
+])
+
+OVN_FOR_EACH_NORTHD([
 AT_SETUP([ovn-controller - Local Chassis_Template_Var updates])
 AT_KEYWORDS([templates])
 ovn_start
