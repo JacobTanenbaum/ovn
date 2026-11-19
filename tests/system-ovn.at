@@ -20982,6 +20982,26 @@ nf_up() {
     ovs-vsctl set interface ovs-$port external-ids:iface-id="$port"
 }
 
+# Wait until the NF vtap mirror flows for the given tap port are installed.
+# Depending on the OVS version, the action is rendered as
+# "clone(set_field:0x<key>->reg15,...)" or as
+# "clone(load:0x<key>->NXM_NX_REG15[],...)", so match either form. The helper
+# only waits for the new tap's flows to appear; during failover the previous
+# tap's mirror flows may linger briefly, which is harmless for the >= 10
+# captured-lines check on the new tap.
+wait_nf_vtap_mirror_flows_installed() {
+    local tap=$1
+    local key=$(printf '0x%x' \
+        "$(ovn-sbctl --bare --columns=tunnel_key list port_binding "$tap")")
+    local ls_in_table=$(ovn-debug lflow-stage-to-oftable ls_in_network_function)
+    local ls_out_table=$(ovn-debug lflow-stage-to-oftable ls_out_network_function)
+    OVS_WAIT_UNTIL([
+        { ovs-ofctl dump-flows br-int table=$ls_in_table; \
+          ovs-ofctl dump-flows br-int table=$ls_out_table; } |
+        grep -qi "clone(.*$key->.*reg15"
+    ])
+}
+
 # Returns 0 if the given address contains ':', i.e. is an IPv6 address.
 is_v6_addr() {
     test "${1#*:}" != "$1"
@@ -21009,6 +21029,8 @@ validate_nf_vtap_with_traffic() {
     # Wait for the health check to mark nf0 as the active NF.
     wait_column "$nf0_uuid" nb:network_function_group \
         network_function_active name=nfg0
+    check ovn-nbctl --wait=hv sync
+    wait_nf_vtap_mirror_flows_installed nf-vtap
 
     NETNS_START_TCPDUMP([nf], [-nvvv -i nf-vtap $pcap_filter], [tcpdump-nf-vtap])
 
@@ -21034,6 +21056,8 @@ validate_nf_vtap_with_traffic() {
     # Wait for the health check to fail over to nf1.
     wait_column "$nf1_uuid" nb:network_function_group \
         network_function_active name=nfg0
+    check ovn-nbctl --wait=hv sync
+    wait_nf_vtap_mirror_flows_installed nf-vtap2
 
     NETNS_START_TCPDUMP([nf], [-nvvv -i nf-vtap2 $pcap_filter], [tcpdump-nf-vtap])
 
@@ -21059,6 +21083,8 @@ validate_nf_vtap_with_traffic() {
     # Wait for the health check to fall back to nf0.
     wait_column "$nf0_uuid" nb:network_function_group \
         network_function_active name=nfg0
+    check ovn-nbctl --wait=hv sync
+    wait_nf_vtap_mirror_flows_installed nf-vtap
 
     NETNS_START_TCPDUMP([nf], [-nvvv -i nf-vtap $pcap_filter], [tcpdump-nf-vtap])
 
